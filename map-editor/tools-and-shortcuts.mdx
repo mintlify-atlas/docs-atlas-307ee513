@@ -1,0 +1,123 @@
+---
+title: "Map Editor Tools, Painting, and Keyboard Shortcuts"
+sidebarTitle: "Tools & Shortcuts"
+description: "Reference for all map editor painting tools — Stamp, Fill, Eraser — plus zoom controls, undo, and every keyboard shortcut in the map editor."
+---
+
+The Webtile map editor provides three painting tools — Stamp, Fill, and Eraser — together with zoom controls and a full undo history. Every tool is accessible from the toolbar below the navigation bar, or instantly via a single-key shortcut. This page covers each tool in detail and lists every keyboard shortcut available in the map editor.
+
+## Painting tools
+
+The toolbar renders the three tools as labeled icon buttons. The active tool is highlighted with a blue gradient background. Pressing a tool's shortcut key while the keyboard focus is not inside a text input will switch to that tool immediately.
+
+### Stamp (S)
+
+The Stamp tool paints the currently selected tile onto the map. It is the default tool when a map is first opened.
+
+- **Left-drag** — holds the mouse button down and drags to paint continuously across all cells the pointer enters
+- **Right-click** — erases the cell under the cursor regardless of which tile is selected (identical to Eraser behavior)
+- If no tileset is loaded or no tile is selected, painting has no effect
+
+A hover overlay shows a semi-transparent preview of the tile to be placed (amber outline) on the cell under the pointer before you commit the stroke.
+
+### Fill (F)
+
+The Fill tool performs a **BFS flood-fill** that replaces all contiguous cells sharing the same tile value as the clicked cell with the currently selected tile.
+
+- **Left-click** — starts the fill from the clicked cell; the entire connected region of identical tiles is replaced in a single operation
+- If the clicked cell already contains the selected tile, the fill is skipped (no-op and no undo entry is created)
+- The flood-fill considers four cardinal neighbors (up, down, left, right) — diagonal cells are not treated as connected
+- Fill works on empty cells too: clicking an empty cell fills the entire connected empty region
+
+<Note>
+  The Fill tool requires both a tileset and a selected tile to be active. If either is missing, the click is ignored.
+</Note>
+
+### Eraser (E)
+
+The Eraser tool clears cells, setting them back to empty (null) — shown as a checkerboard in the canvas.
+
+- **Left-drag** — clears every cell the pointer enters while the button is held
+- **Right-click** — also erases (available from any tool, not just Eraser)
+
+When the Eraser is active, the hover overlay shows a red tint (`rgba(255,60,60,0.18)`) with a red outline, making it easy to see which cell will be cleared.
+
+### Double-width mode (D)
+
+The **2×W** button toggles `doubleWidth` on the active map. This is not a painting tool in the traditional sense — it changes how cells are rendered rather than what tiles are stored.
+
+When `doubleWidth` is on, every tile cell is rendered at `tileWidth × 2` pixels horizontally (while tile height stays the same). This is designed to match the natural aspect ratio of Amstrad CPC Mode 0 graphics, where each hardware pixel occupies twice the horizontal screen space. The underlying `mapTiles` data is not changed; only the display is affected. The mode is saved per-map to Firestore.
+
+---
+
+## Undo
+
+Webtile implements a full undo history for map tile painting. The history is stored in a `historyRef` array of `mapTiles` snapshots, capped at **50 entries**.
+
+The key mechanics:
+
+- `pushHistory()` is called before **every** tile mutation — a single stamp stroke, a fill operation, or an erase — so each discrete action is independently undoable
+- `handleUndo()` pops the most recent snapshot from the history stack and restores `mapTiles` to that state
+- When the history stack is empty, the UNDO toolbar button becomes dimmed (`opacity: 0.35`) and is disabled
+- The history stack is cleared (`historyRef.current = []`) whenever you load a new map, create a new map, import a TMX, or close the current map
+
+<Note>
+  Undo history is **in-memory only**. Reloading the page or opening a different map clears the undo stack.
+</Note>
+
+Undo is triggered in two ways:
+
+- **Ctrl+Z** (or **Cmd+Z** on macOS) — a global `keydown` handler intercepts this combination anywhere on the page, as long as focus is not inside an `<input>` element
+- The **UNDO** button in the toolbar — clicking it calls `onUndo` which runs the same `handleUndo` function
+
+---
+
+## Zoom
+
+The canvas supports six fixed zoom levels:
+
+```
+0.25×   0.5×   1×   2×   4×   8×
+```
+
+The current zoom is displayed in the toolbar between the **OUT** and **IN** buttons. At sub-1× levels the label is shown as a percentage (e.g. `25%`, `50%`). At 1× and above it shows as a multiplier (`1×`, `2×`, `4×`, `8×`).
+
+Three zoom controls are available:
+
+| Control | Action |
+|---------|--------|
+| **Ctrl++** or **Ctrl+=** | Zoom in one step |
+| **Ctrl+-** | Zoom out one step |
+| **Scroll wheel** up | Zoom in one step |
+| **Scroll wheel** down | Zoom out one step |
+| Toolbar **IN** button | Zoom in one step |
+| Toolbar **OUT** button | Zoom out one step |
+
+<Note>
+  Zooming with the scroll wheel calls `e.preventDefault()` to prevent the page from scrolling while the pointer is over the canvas. This means the browser's default scroll behavior is suppressed on the grid area.
+</Note>
+
+The zoom value is passed to `TilemapGrid` as a multiplier applied to every cell's `width` and `height` CSS properties, so all cells scale uniformly. `image-rendering: pixelated` keeps tile edges sharp at integer zoom levels.
+
+---
+
+## Keyboard shortcuts reference
+
+All map-editor shortcuts are registered in a global `keydown` listener on `window`. Shortcuts are **disabled when focus is inside an `<input>`** element to avoid conflicts with text entry in modals.
+
+| Key | Action |
+|-----|--------|
+| `S` | Switch to **Stamp** tool |
+| `F` | Switch to **Fill** tool |
+| `E` | Switch to **Eraser** tool |
+| `D` | Toggle **double-width** mode |
+| `Ctrl+Z` | **Undo** last tile mutation |
+| `Ctrl++` / `Ctrl+=` | **Zoom in** one step |
+| `Ctrl+-` | **Zoom out** one step |
+| Left-drag (on canvas) | **Paint** cells with the active tool |
+| Right-click (on canvas) | **Erase** the cell under the cursor |
+| Scroll wheel (on canvas) | **Zoom** in or out |
+
+<Tip>
+  You can hold the left mouse button and drag across multiple cells to paint a continuous stroke with the Stamp or Eraser tool — you do not need to click each cell individually.
+</Tip>

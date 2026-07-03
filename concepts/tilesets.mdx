@@ -1,0 +1,106 @@
+---
+title: "Tilesets: Importing and Managing Tile Images"
+sidebarTitle: "Tilesets"
+description: "Understand how Webtile loads tileset PNG images, slices them into tile cells, stores them in Firestore, and exposes them in the right sidebar."
+---
+
+A tileset is a single image — typically a PNG — that Webtile slices into a uniform grid of same-sized cells. Each cell becomes one paintable tile in the map editor. Tilesets are stored in Firestore as base64 data URLs so that your tile graphics round-trip through the same authenticated cloud store as the rest of your project data, with no separate file hosting required.
+
+<Note>
+Each map in a project has its own independent tileset. Changing or replacing the tileset on one map has no effect on any other map in the same project.
+</Note>
+
+## How a tileset is sliced
+
+When you load an image, Webtile divides it into a grid using the map's `tileW` and `tileH` values:
+
+```js
+const cols = Math.floor(naturalW / tileW)
+const rows = Math.floor(naturalH / tileH)
+```
+
+Any pixels at the right or bottom edge that do not fit into a complete tile cell are ignored. The resulting grid of `cols × rows` cells is the full set of tiles available for painting.
+
+## The tileset object in memory
+
+Once loaded, a tileset is held in application state as a plain object with the following shape:
+
+```js
+{
+  url:      string,   // blob: URL (on initial load) or base64 data URL (after Firestore round-trip)
+  img:      HTMLImageElement,
+  canvas:   HTMLCanvasElement,  // off-screen canvas used for pixel reads and tile editing
+  cols:     number,
+  rows:     number,
+  naturalW: number,
+  naturalH: number,
+}
+```
+
+The `canvas` property is an off-screen `HTMLCanvasElement` that mirrors the full tileset image at its native resolution. It is used both for rendering individual tiles into the map grid and as the backing buffer for the in-sidebar tile pixel editor.
+
+## Firestore storage
+
+The tileset image is **not** stored inline in the map document. Instead, it lives in a dedicated sub-document to stay within Firestore's 1 MB per-document limit:
+
+```
+users/{uid}/projects/{pid}/maps/{mid}/assets/tileset
+  └─ data      (string)  — full base64 data URL of the image
+  └─ naturalW  (number)  — image width in pixels
+  └─ naturalH  (number)  — image height in pixels
+```
+
+The `hasTileset` boolean on the parent map document signals whether this sub-document exists. When `loadMap` reads a map it checks `hasTileset` before attempting to fetch the tileset sub-document, avoiding a wasted Firestore read for maps that have no tileset.
+
+<Warning>
+Very large tileset images can push the `assets/tileset` document close to the Firestore 1 MB limit. If you encounter save errors, reduce the tileset image dimensions or switch to a more compact PNG encoding before importing.
+</Warning>
+
+## Importing a tileset
+
+<Steps>
+  <Step title="Open the right sidebar tileset panel">
+    With a map open, find the **TILESET** section in the right sidebar. If no tileset is loaded you will see a placeholder grid and a **Load Image** button.
+  </Step>
+  <Step title="Choose an image file">
+    Click **Load Image** (or **Change** if a tileset is already present) to open a file picker. Select any image file — PNG is recommended. Webtile creates a blob URL, loads the image into an `HTMLImageElement`, draws it onto an off-screen canvas, and computes `cols` and `rows` using the map's tile dimensions.
+  </Step>
+  <Step title="Confirm the grid">
+    The sidebar shows the tileset rendered as a pixel-perfect grid with column and row count, natural image dimensions, and SVG grid lines overlaid at tile boundaries. Verify the cells align with your artwork.
+  </Step>
+  <Step title="Paint tiles on the map">
+    Click any cell in the tileset panel to select it as the active stamp. The selected tile is highlighted with a green border. Move to the map canvas and left-drag to paint.
+  </Step>
+</Steps>
+
+## Selecting a tile
+
+Clicking a cell in the tileset panel calls `onSelectTile` with `{ col, row, idx }`, where `idx = row * tileset.cols + col`. The selected tile is passed to `TilemapGrid` as `selectedTile` and used in stamp and flood-fill operations. A hover highlight (blue tint) tracks your cursor across the grid, and the selected tile is outlined in green.
+
+## The right sidebar minimap
+
+Above the tileset panel, the right sidebar renders a **minimap** — a scaled-down canvas preview of the entire map, approximately 56 px wide. The minimap redraws whenever `mapTiles` or `tileset` changes. Painted cells are drawn by sampling the tileset `canvas` at each tile's source rectangle; empty cells fall back to a two-tone checkerboard pattern.
+
+## Per-tile pixel editor
+
+<Tip>
+The **TILE EDITOR** in the right sidebar lets you tweak individual tileset tiles pixel-by-pixel without leaving the browser. Select a tile in the tileset panel, scroll down, and the editor appears automatically. Changes are written back to the shared off-screen `canvas` and propagated to the map via `onEditTile` — no round-trip to an external image editor needed.
+</Tip>
+
+When a tile is selected and a tileset is loaded, the `TileEditorSection` component appears below the tileset grid. It provides:
+
+- A **zoomed canvas** of the selected tile (zoom level auto-calculated to fill ~180 px).
+- A **PEN** tool for left-click painting and right-click erasing.
+- An **eyedropper** (PICK) tool to sample any existing colour from the tile.
+- A **27-colour CPC swatch palette** representing the full 3×3×3 RGB cube of Amstrad CPC hardware colours.
+- A native **colour picker** input for arbitrary hex colours.
+
+Edits are applied directly to `tileset.canvas` at `(selectedTile.col * tileW + px, selectedTile.row * tileH + py)`, then the in-memory tileset object is updated so the map grid immediately reflects the changes.
+
+## Exporting a tileset
+
+Use **MAPS → Export Tileset** in the top navigation to download the current tileset as a PNG file. The export uses the in-memory `tileset.canvas`, so any pixel-editor changes made during the session are included even if the map has not yet been auto-saved.
+
+## TMX export and the tileset
+
+When you export a map as a Tiled `.tmx` file (**MAPS → Export TMX**), the tileset image path and `cols` count are embedded in the XML output. The `.tmx` format references the tileset file externally, so you should export the tileset PNG alongside the TMX file if you intend to open the map in an external editor such as Tiled.

@@ -1,0 +1,86 @@
+---
+title: "Keyboard Shortcuts Reference for Webtile"
+sidebarTitle: "Keyboard Shortcuts"
+description: "Complete reference of every keyboard shortcut in Webtile's map editor and sprite editor, including tools, zoom, undo, and clipboard operations."
+---
+
+Webtile provides keyboard shortcuts in both the map (tilemap) editor and the sprite editor. Shortcuts are designed to keep your hands on the keyboard while painting, reducing the need to reach for toolbar buttons. The two editors share some conventions — for example `Ctrl+Z` undoes in both — but each editor has its own tool shortcuts that reflect the capabilities available in that context.
+
+<Note>
+  Keyboard shortcuts are active when the **editor canvas has focus**. If you click a UI element such as a menu, modal, or input field, keyboard focus moves away from the canvas and shortcuts will no longer fire until you click back on the canvas area. Some shortcuts (such as `Ctrl+Z`) are wired globally in `HomePage.jsx` and remain active regardless of focus.
+</Note>
+
+---
+
+## Map Editor Shortcuts
+
+The map editor (`TilemapGrid`) supports painting, erasing, flood-filling, zooming, and undo. Tool shortcuts are single-key; modifier shortcuts use `Ctrl`.
+
+| Key / Action | Description |
+|---|---|
+| `S` | Switch to the **Stamp** tool — left-drag to paint the selected tile onto cells |
+| `F` | Switch to the **Fill** tool — flood-fills all contiguous cells that share the same tile as the clicked cell (BFS algorithm) |
+| `E` | Switch to the **Eraser** tool — left-drag to clear cells (sets them to `-1`) |
+| `D` | Toggle **double-width** mode — stretches each tile cell to 2× its natural pixel width |
+| `Ctrl+Z` | **Undo** — reverts to the previous tile state (history stack holds up to 50 snapshots) |
+| `Ctrl++` | **Zoom in** — steps up through zoom levels `0.25 → 0.5 → 1 → 2 → 4 → 8` |
+| `Ctrl+-` | **Zoom out** — steps down through the same zoom levels |
+| Left-drag | **Paint tile** — paints the selected tile (Stamp tool) or erases cells (Eraser tool) as you drag across the grid |
+| Right-click | **Erase cell** — clears the clicked cell regardless of the active tool |
+| Scroll wheel | **Zoom** — scrolling up zooms in, scrolling down zooms out |
+
+---
+
+## Sprite Editor Shortcuts
+
+The sprite editor (`SpriteEditor`) provides shortcuts for tool selection, undo, clipboard operations, and display toggles. The pencil tool is the default; `Escape` always returns to it.
+
+| Key / Action | Description |
+|---|---|
+| `F` | Switch to the **Fill** tool — BFS flood-fill; constrained to the active selection rectangle if one is defined |
+| `R` | Switch to the **Select** tool — drag to define a rectangular selection in sprite-pixel coordinates |
+| `D` | Toggle **double-width** display — stretches pixels 2× horizontally to preview the wide-pixel CPC Mode 0 aspect ratio |
+| `Ctrl+Z` | **Undo** — reverts to the previous sprite state (history stack holds up to 50 snapshots) |
+| `Ctrl+C` | **Copy selection** — copies the pixels within the active selection rectangle to the clipboard |
+| `Ctrl+V` | **Paste** — enters paste-preview mode; click on the canvas to stamp the clipboard contents at that position |
+| `Escape` | **Clear selection / exit paste / revert to Pencil** — clears the active selection rectangle, cancels paste-preview mode, and returns the active tool to Pencil |
+| Shift+click | **Draw line** (Pencil tool only) — draws a Bresenham straight line from the previous click point to the current cursor position |
+
+---
+
+## Quick-Reference Card
+
+<CardGroup cols={2}>
+  <Card title="Map Editor — Tools" icon="map">
+    | Key | Tool |
+    |-----|------|
+    | `S` | Stamp |
+    | `F` | Fill |
+    | `E` | Eraser |
+  </Card>
+  <Card title="Map Editor — View & Edit" icon="magnifying-glass">
+    | Key | Action |
+    |-----|--------|
+    | `D` | Toggle double-width |
+    | `Ctrl+Z` | Undo |
+    | `Ctrl++` | Zoom in |
+    | `Ctrl+-` | Zoom out |
+    | Scroll | Zoom |
+  </Card>
+  <Card title="Sprite Editor — Tools" icon="paintbrush">
+    | Key | Tool |
+    |-----|------|
+    | `F` | Fill |
+    | `R` | Select |
+    | Shift+click | Draw line |
+    | `Escape` | Back to Pencil |
+  </Card>
+  <Card title="Sprite Editor — Edit & Clipboard" icon="scissors">
+    | Key | Action |
+    |-----|--------|
+    | `D` | Toggle double-width |
+    | `Ctrl+Z` | Undo |
+    | `Ctrl+C` | Copy selection |
+    | `Ctrl+V` | Paste |
+  </Card>
+</CardGroup>

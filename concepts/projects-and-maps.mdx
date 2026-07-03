@@ -1,0 +1,117 @@
+---
+title: "Projects and Maps: Webtile's Organisational Model"
+sidebarTitle: "Projects & Maps"
+description: "Understand how Webtile organises work into projects and maps, how data is persisted in Firestore, and how tile data is encoded and decoded."
+---
+
+Webtile organises all of your work into a two-level hierarchy: a **project** is the top-level container that holds one or more **maps**. Every project and map is persisted in Firestore under the authenticated user's document tree, so your work is automatically available from any browser without manual file management.
+
+## Firestore path hierarchy
+
+All Webtile data lives under a single `users/{uid}` root. The path structure below shows where each piece of data is stored.
+
+```
+users/{uid}/projects/{pid}
+  └─ name        (string)
+  └─ createdAt   (Timestamp)
+  └─ updatedAt   (Timestamp)
+
+users/{uid}/projects/{pid}/maps/{mid}
+  └─ name        (string)
+  └─ tileW       (number)
+  └─ tileH       (number)
+  └─ mapW        (number)
+  └─ mapH        (number)
+  └─ doubleWidth (boolean)
+  └─ mapTiles    (number[])   — flat int array
+  └─ hasTileset  (boolean)
+  └─ createdAt   (Timestamp)
+  └─ updatedAt   (Timestamp)
+
+users/{uid}/projects/{pid}/maps/{mid}/assets/tileset
+  └─ data        (string)    — base64 data URL
+  └─ naturalW    (number)
+  └─ naturalH    (number)
+
+users/{uid}/projects/{pid}/sprites/{sid}
+  └─ (see the Sprites concept page)
+```
+
+## Projects
+
+A project stores only identifying metadata — `name`, `createdAt`, and `updatedAt`. It acts as a namespace for one or more maps and a separate collection of sprites. Projects are listed in the **PROJECTS** menu, sorted newest-first by `updatedAt`. Any time a map is saved, the parent project's `updatedAt` is bumped so the project floats to the top of the list automatically.
+
+## Maps
+
+Each map is an independent document in the `maps` subcollection. Maps within the same project can have completely different tile sizes, dimensions, and tilesets — there is no shared configuration at the project level.
+
+### Map document fields
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Human-readable map name shown in the MAPS menu. |
+| `tileW` | `number` | Width of a single tile cell in pixels. |
+| `tileH` | `number` | Height of a single tile cell in pixels. |
+| `mapW` | `number` | Map width in tiles (number of columns). |
+| `mapH` | `number` | Map height in tiles (number of rows). |
+| `doubleWidth` | `boolean` | When `true`, each cell is rendered 2× wider to simulate the CPC Mode 0 aspect ratio. |
+| `mapTiles` | `number[]` | Flat int array encoding the tile placed in every cell. |
+| `hasTileset` | `boolean` | Whether the map has an associated tileset stored in its `assets/tileset` sub-document. |
+| `createdAt` | `Timestamp` | Firestore server timestamp set when the map is first created. |
+| `updatedAt` | `Timestamp` | Firestore server timestamp refreshed on every save. |
+
+### Multiple maps per project
+
+A single project can hold as many maps as you need. Each map has its own tile dimensions, canvas size, tile data, and tileset. Switching between maps loads the full map document — including tile data and tileset image — from Firestore.
+
+## Tile encoding
+
+In memory, `mapTiles` is a 2-D array of cell objects `{ col, row, idx } | null`. Before writing to Firestore the array is flattened and each cell is serialised to a single integer using the formula:
+
+```js
+// Encoding (memory → Firestore)
+const encoded = tileRow * 1000 + tileCol   // painted cell
+const empty   = -1                          // empty cell
+
+// Decoding (Firestore → memory)
+const tileCol = value % 1000
+const tileRow = Math.floor(value / 1000)
+```
+
+<Info>
+The encoding scheme assumes tilesets are fewer than 1000 columns wide. Very wide tileset images that produce 1000 or more tile columns are not supported.
+</Info>
+
+The flat array is stored directly on the map document. The tileset image itself is **not** embedded in the same document — it lives in a dedicated `assets/tileset` sub-document as a base64 data URL (see [Tilesets](/concepts/tilesets)).
+
+## doubleWidth mode
+
+Setting `doubleWidth: true` on a map stretches each tile cell to twice its natural pixel width at render time. This corrects the aspect ratio for graphics authored for the Amstrad CPC's Mode 0, where hardware pixels are twice as wide as they are tall. The underlying tile data and the stored tileset image are unaffected; doubleWidth is a display-only transform. Toggle it at any time with the **D** keyboard shortcut.
+
+## Auto-save
+
+Webtile auto-saves the active map 2 seconds after the last tile paint. The save callback captures the current project ID, map ID, config, tileset, and tile data through React refs rather than through closure state, which prevents stale-closure bugs in the async path.
+
+<Note>
+Auto-save only fires after a tile mutation. Simply loading a project or switching maps does not trigger a write.
+</Note>
+
+## Old-schema migration
+
+Early versions of Webtile stored the active map's configuration fields (`tileW`, `tileH`, `mapW`, `mapH`, `mapTiles`, `hasTileset`) directly on the project document, with the tileset at `projects/{pid}/assets/tileset`. If `loadProject` detects a `tileW` field on the project document it calls `migrateOldProject()`, which:
+
+<Steps>
+  <Step title="Creates a maps subcollection">
+    A new map document is written to `projects/{pid}/maps/` with the config and tile data lifted from the project document.
+  </Step>
+  <Step title="Moves the tileset">
+    If `hasTileset` was `true`, the tileset document is copied from the old path to the new `maps/{mid}/assets/tileset` path.
+  </Step>
+  <Step title="Guards against double-migration">
+    Before doing any work, `migrateOldProject()` checks whether the `maps` subcollection already has documents. If it does, migration is skipped, making the function safe to call repeatedly.
+  </Step>
+</Steps>
+
+<Warning>
+Migration is best-effort. If the old tileset document cannot be found the migration continues without it; no error is surfaced to the user.
+</Warning>

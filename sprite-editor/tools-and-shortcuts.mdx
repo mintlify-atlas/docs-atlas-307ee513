@@ -1,0 +1,162 @@
+---
+title: "Sprite Editor Tools, Selection, and Keyboard Shortcuts"
+sidebarTitle: "Tools & Shortcuts"
+description: "Reference for every sprite editor tool — Pencil, Eraser, Picker, Select, Fill — plus undo, copy/paste, and all keyboard shortcuts."
+---
+
+Webtile's sprite editor provides five drawing tools, a selection system with copy/cut/paste and move, flip transforms, and a full undo stack. All tools share the same canvas and respect the active selection when one is defined. This page documents every tool in detail and lists the complete keyboard shortcut reference.
+
+## Drawing Tools
+
+### Pencil
+
+The Pencil is the default tool. Left-click or left-drag on the canvas to paint the **active foreground ink** at each sprite-pixel position the cursor passes through. The cursor updates to a solid color swatch matching the current ink.
+
+**Bresenham line drawing:** Hold **Shift** and click to draw a straight line from the previous click point to the current cursor position. The line is computed using the Bresenham algorithm, guaranteeing clean pixel-perfect diagonals. The anchor point updates after each Shift+click so you can chain line segments.
+
+```
+Previous click → current click  (Shift held)
+●━━━━━━━━━━━━●   ← Bresenham line painted in activeInk
+```
+
+<Tip>
+  Chain Shift+clicks to trace polygon outlines quickly. Release Shift and click anywhere to reset the line anchor to that new point.
+</Tip>
+
+### Eraser
+
+The Eraser clears pixels by writing ink index `0` (transparent) at each position the cursor touches during a left-drag stroke.
+
+**Selection-aware erase:** If a selection rectangle is active, a single left-click with the Eraser immediately clears **the entire selection area** to ink 0 in one operation — rather than stroking over each pixel individually. This is the fastest way to blank a region.
+
+<Note>
+  When a selection is active, the Eraser is constrained to the selection bounds during normal drag strokes as well. Pixels outside the selection are not affected.
+</Note>
+
+### Picker (Color Picker)
+
+The Picker samples the ink index of the sprite pixel under the cursor and sets it as the **active foreground ink**. It does not modify any pixel data. The ink slots in the right sidebar update visually to reflect the sampled ink.
+
+<Tip>
+  Use the Picker after importing a PNG to quickly identify which ink index was assigned to a particular color in the imported image, then continue painting with that ink.
+</Tip>
+
+### Select (`R`)
+
+The Select tool lets you define a rectangular region in sprite-pixel coordinates by clicking and dragging. The selection is displayed as a dashed green border overlaid on the canvas.
+
+Selection interactions:
+
+- **Click and drag** — defines the selection rectangle from the drag anchor to the current cursor position. The rectangle is normalized so it is always top-left → bottom-right regardless of drag direction.
+- **Ctrl+C** — copies the pixels inside the selection to the clipboard as `{ w, h, pixels }`.
+- **Ctrl+X** — cuts the selection: copies to clipboard, then clears the selected pixels to ink 0.
+- **Ctrl+V** — enters **paste mode** (see below).
+- **Escape** — clears the selection and reverts to the Pencil tool if the current tool is Select.
+
+### Fill (`F`)
+
+The Fill tool performs a BFS (breadth-first search) flood fill starting from the clicked pixel. All contiguous pixels that share the same ink index as the clicked pixel are replaced with the **active foreground ink**.
+
+Right-clicking with the Fill tool floods with the **background ink** instead of the foreground ink.
+
+<Note>
+  When a selection is active, flood fill propagation is strictly confined to the selection rectangle. Pixels outside the selection bounds are never modified, even if they share the same ink as the fill target.
+</Note>
+
+---
+
+## Selection Operations
+
+### Copy / Paste
+
+<Steps>
+  <Step title="Define a selection">
+    Switch to the Select tool (`R`) and drag a rectangle over the pixels you want to copy.
+  </Step>
+  <Step title="Copy">
+    Press **Ctrl+C** (or click the COPY toolbar button). The selection contents are stored in the clipboard as `{ w, h, pixels }`.
+  </Step>
+  <Step title="Paste">
+    Press **Ctrl+V** (or click the PASTE toolbar button). The editor enters **paste mode** — a semi-transparent overlay of the clipboard contents follows the cursor.
+  </Step>
+  <Step title="Stamp">
+    Click anywhere on the canvas to stamp the clipboard pixels at that position. Ink 0 pixels in the clipboard are treated as transparent and do not overwrite the destination. The paste is committed and paste mode exits automatically.
+  </Step>
+  <Step title="Exit without stamping">
+    Press **Escape** to exit paste mode without stamping.
+  </Step>
+</Steps>
+
+### Move
+
+After making a selection, you can enable the **MOVE** tool (`M`) to drag the selected region to a new position. The original pixels are cleared to ink 0 (the background ink at the time of the move) and the pixels are written to the destination on mouse release. The selection rectangle follows the moved region.
+
+<Note>
+  The MOVE toolbar button is disabled when no selection is active.
+</Note>
+
+---
+
+## Transform Operations
+
+### Flip Horizontal (FLIP H)
+
+Mirrors the current frame left-to-right. Every pixel at column `x` is swapped with the pixel at column `width - 1 - x`. Pushes a history entry before transforming.
+
+### Flip Vertical (FLIP V)
+
+Mirrors the current frame top-to-bottom. Every pixel at row `y` is swapped with the pixel at row `height - 1 - y`. Pushes a history entry before transforming.
+
+---
+
+## Undo
+
+Webtile maintains an undo history for the sprite editor separate from the tilemap editor. Key details:
+
+- **Stack size:** up to 50 entries stored in `historyRef`.
+- **`pushHistory()`** is called explicitly before every operation that mutates pixels or structure — including single strokes, fills, flips, paste commits, moves, and resize operations.
+- **`handleUndo()`** pops the most recent snapshot from the stack, calls `setSprite` to restore it, and schedules an auto-save of the restored state.
+- The UNDO toolbar button is disabled (`canUndo = false`) when the stack is empty.
+- Loading a different sprite **clears** the undo history.
+
+---
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `B` | Switch to Pencil tool |
+| `E` | Switch to Eraser tool |
+| `F` | Switch to Fill tool |
+| `R` | Switch to Select tool |
+| `M` | Switch to Move tool |
+| `D` | Toggle double-width pixel view |
+| `Ctrl+Z` | Undo last operation |
+| `Ctrl+C` | Copy active selection to clipboard |
+| `Ctrl+X` | Cut active selection to clipboard |
+| `Ctrl+V` | Enter paste mode with clipboard contents |
+| `Shift+click` | Draw Bresenham line from last click (Pencil tool only) |
+| `Escape` | Clear selection · exit paste mode · revert Select → Pencil |
+
+<Note>
+  Keyboard shortcuts are suppressed when an `<input>` element has focus (e.g. the sprite name field in the Properties modal), so you can type without accidentally triggering tools.
+</Note>
+
+---
+
+## Selection and Tool Interaction Summary
+
+<CardGroup cols={2}>
+  <Card title="Eraser + Selection" icon="eraser">
+    One click clears the entire selection rectangle. During drag strokes, the eraser is constrained to the selection bounds.
+  </Card>
+  <Card title="Fill + Selection" icon="fill">
+    BFS flood fill is confined to the selection rectangle. Pixels outside the selection are never touched.
+  </Card>
+  <Card title="Pencil + Selection" icon="pencil">
+    The pencil paints freely regardless of selection. Selection boundaries do not restrict pencil strokes.
+  </Card>
+  <Card title="Move + Selection" icon="up-down-left-right">
+    Move requires an active selection. The MOVE tool button is grayed out when no selection exists.
+  </Card>
+</CardGroup>

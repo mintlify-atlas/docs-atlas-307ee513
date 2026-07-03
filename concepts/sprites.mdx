@@ -1,0 +1,124 @@
+---
+title: "CPC Sprites: Structure, Palettes, and Frames"
+sidebarTitle: "Sprites"
+description: "Learn how Webtile models CPC sprites with video modes, ink palettes, multi-frame pixel data, and how they are stored in Firestore."
+---
+
+Webtile includes a full CPC sprite editor alongside its tilemap editor. Sprites are stored as Firestore documents in a `sprites` subcollection under a project, and share the same Firebase Auth identity as the rest of your work. Each sprite captures everything the Amstrad CPC hardware needs to display it: a video mode, an ink palette mapping CPC hardware colour indices to ink slots, and one or more frames of pixel data expressed as ink indices.
+
+## Firestore location
+
+Sprite documents live at:
+
+```
+users/{uid}/projects/{pid}/sprites/{sid}
+```
+
+Sprites belong to a project but are independent of any map — you can work on sprites and maps in the same project without them interfering with each other.
+
+## Sprite document fields
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Human-readable sprite name shown in the SPRITES menu. |
+| `videoMode` | `number` | CPC video mode: `0`, `1`, or `2`. Controls colour depth and pixels-per-byte encoding. |
+| `width` | `number` | Sprite canvas width in sprite pixels. |
+| `height` | `number` | Sprite canvas height in sprite pixels. |
+| `palette` | `number[]` | Array of CPC hardware colour indices, one per ink slot. Length is determined by the video mode (16, 4, or 2 entries). |
+| `frames` | `Array<{ pixels: number[] }>` | Array of frame objects. Each frame stores a flat array of ink indices, one per pixel, in row-major order. |
+| `createdAt` | `Timestamp` | Firestore server timestamp set when the sprite is first created. |
+| `updatedAt` | `Timestamp` | Firestore server timestamp refreshed on every save. |
+
+## CPC video modes
+
+The Amstrad CPC hardware supports three video modes that trade colour depth for horizontal resolution. Webtile honours these constraints in both the editor and the binary export.
+
+<CardGroup cols={3}>
+  <Card title="Mode 0" icon="palette">
+    **16 colours**  
+    2 pixels per byte (interleaved bit planes).  
+    Default palette indices: `[0, 26, 6, 18, 3, 11, 24, 15, 8, 20, 4, 2, 21, 5, 16, 13]`
+  </Card>
+  <Card title="Mode 1" icon="palette">
+    **4 colours**  
+    4 pixels per byte (interleaved bit planes).  
+    Default palette indices: `[0, 26, 6, 18]`
+  </Card>
+  <Card title="Mode 2" icon="palette">
+    **2 colours**  
+    8 pixels per byte (1-bit, simple).  
+    Default palette indices: `[0, 26]`
+  </Card>
+</CardGroup>
+
+The number of ink slots — and therefore the length of the `palette` array and the valid range of non-transparent ink indices — is determined entirely by the video mode chosen at sprite creation time.
+
+## Default palettes
+
+When a new sprite is created, `spriteService.js` seeds the `palette` field from `DEFAULT_PALETTES`, a lookup keyed by video mode:
+
+```js
+const DEFAULT_PALETTES = {
+  0: [0, 26, 6, 18, 3, 11, 24, 15, 8, 20, 4, 2, 21, 5, 16, 13],
+  1: [0, 26, 6, 18],
+  2: [0, 26],
+}
+```
+
+Each number is a CPC hardware colour index (0–26) drawn from the CPC's 27-colour 3×3×3 RGB cube palette. You can replace any ink slot's colour in the sprite editor by clicking the slot and choosing from the 27-colour CPC picker, or by importing a JASC-PAL `.pal` file.
+
+## Ink indices and transparency
+
+Pixel data in every frame is stored as a flat array of **ink indices**, not raw colours. An ink index is a zero-based slot number into the sprite's `palette` array. The editor renders ink `n` by looking up `palette[n]` and mapping it to the corresponding CPC hardware RGB value.
+
+<Note>
+**Ink index 0 is always transparent.** Pixels set to ink 0 are rendered as a checkerboard in the editor and exported as fully transparent in PNG exports. When encoding to CPC hardware byte format, index 0 produces a mask bit that marks the pixel as background. You can assign any CPC colour to `palette[0]`; that colour choice affects the CPC hardware output but does not change the transparency behaviour in the Webtile editor.
+</Note>
+
+A newly created sprite initialises all pixels to ink 0, giving you a fully transparent canvas to draw on.
+
+## Frames
+
+Each sprite document contains a `frames` array. Every element is a plain object with a single `pixels` key holding the flat ink-index array for that frame:
+
+```json
+{
+  "frames": [
+    { "pixels": [0, 1, 2, 1, 0, ...] },
+    { "pixels": [0, 2, 1, 2, 0, ...] }
+  ]
+}
+```
+
+The pixel array length must equal `width × height`. Frames are displayed as a strip in the right sidebar of the sprite editor. You can add or delete frames from the strip, and the built-in animation player cycles through them so you can preview motion without leaving the browser.
+
+## Listing vs. loading
+
+`listSprites` returns summary objects only — `id`, `name`, `videoMode`, `width`, `height`, and `updatedAt`. The `palette` and `frames` fields (which can be large for multi-frame sprites) are **not** included in the listing. Full pixel data is only fetched when you explicitly open a sprite via `loadSprite`, which reads the complete document.
+
+This two-stage approach keeps the SPRITES menu fast even for projects with many sprites.
+
+## Auto-save
+
+Any pixel mutation in the sprite editor — including pencil strokes, flood fill, erase, paste, and flip operations — schedules an auto-save via a 1.5-second debounce. The save writes `name`, `videoMode`, `width`, `height`, `palette`, and `frames` to Firestore and updates `updatedAt`. The debounce is reset on every mutation, so rapid painting does not produce a burst of writes.
+
+## doubleWidth display
+
+The sprite editor supports a `doubleWidth` toggle (keyboard shortcut **D**) that stretches each sprite pixel 2× horizontally. This simulates the aspect ratio of the Amstrad CPC's Mode 0 display, where hardware pixels are twice as wide as they are tall. `doubleWidth` is a display-only setting stored in editor state; it does not alter the pixel data or the Firestore document.
+
+## PNG and palette import/export
+
+<CardGroup cols={2}>
+  <Card title="PNG export" icon="arrow-down-to-line">
+    Renders the current frame at 1:1 resolution with a transparent background and downloads it as a PNG file.
+  </Card>
+  <Card title="PNG import" icon="arrow-up-from-line">
+    Scales an imported PNG to the sprite's dimensions on an off-screen canvas, then quantises each pixel to the nearest ink slot in the current palette by Euclidean RGB distance. Pixels with alpha below 128 are mapped to ink 0 (transparent).
+  </Card>
+  <Card title="Palette export" icon="arrow-down-to-line">
+    Writes the current palette as a JASC-PAL `.pal` file (`JASC-PAL / 0100 / count / R G B` per line).
+  </Card>
+  <Card title="Palette import" icon="arrow-up-from-line">
+    Parses an imported JASC-PAL file and maps each RGB entry to the nearest of the 27 CPC hardware colours by Euclidean RGB distance.
+  </Card>
+</CardGroup>

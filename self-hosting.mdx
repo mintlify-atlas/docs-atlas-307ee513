@@ -1,0 +1,250 @@
+---
+title: "Deploy Webtile with Your Own Firebase Project"
+sidebarTitle: "Self-Hosting"
+description: "Set up a Firebase project, configure environment variables, and deploy Webtile to a VPS or static host using the production build pipeline."
+---
+
+Webtile is an open-source Vite + React application that connects to Firebase for authentication and data storage. Because all backend infrastructure is provided by Firebase, self-hosting means you only need to serve the compiled static files — no dedicated server process is required. This guide walks through everything from creating a Firebase project to deploying the production build to a VPS or any static host.
+
+<Warning>
+  The Firebase API key (`VITE_FIREBASE_API_KEY`) is intentionally embedded in client-side code and is **safe to expose publicly** — Firebase is designed this way. However, this means anyone who finds your key could attempt to read or write Firestore data if your security rules are permissive. You **must** configure Firestore security rules to restrict access to authenticated users only. The rules template in this guide does exactly that.
+</Warning>
+
+<Steps>
+
+<Step title="Check prerequisites">
+
+Before you begin, make sure you have:
+
+- **Node.js 18 or later** installed locally (the reference CI pipeline uses Node 24, but 18+ works for local builds).
+- A **Google account** to create a Firebase project.
+- A **target host** for the static files: a VPS with a web server (nginx, Caddy, etc.), a static hosting platform (Netlify, Vercel, Cloudflare Pages, GitHub Pages), or any HTTP server that can serve a directory.
+
+Verify your Node version:
+
+```bash
+node --version
+# v18.x.x or higher
+```
+
+</Step>
+
+<Step title="Create a Firebase project and enable services">
+
+1. Go to [https://console.firebase.google.com](https://console.firebase.google.com) and click **Add project**.
+2. Enter a project name and follow the wizard. You can disable Google Analytics if you do not need it.
+3. Once the project is created, enable **Authentication**:
+   - In the left sidebar, click **Build → Authentication → Get started**.
+   - Under **Sign-in method**, enable **Google** (for OAuth popup sign-in) and/or **Email/Password**.
+4. Enable **Firestore Database**:
+   - In the left sidebar, click **Build → Firestore Database → Create database**.
+   - Choose **Start in production mode** (you will set proper security rules in a later step).
+   - Select a Cloud Firestore region close to your users.
+5. Register a **web app** to obtain your config values:
+   - In **Project Settings** (gear icon) → **Your apps** → click the **`</>`** (Web) icon.
+   - Give the app a nickname and click **Register app**.
+   - Copy the `firebaseConfig` object — you will need these values in the next step.
+
+</Step>
+
+<Step title="Fork or clone the repository">
+
+```bash
+# Clone the repository
+git clone https://github.com/johnlobo/webtile.git
+cd webtile
+```
+
+If you plan to contribute or want your own remote, fork the repository on GitHub first and clone your fork instead.
+
+</Step>
+
+<Step title="Configure environment variables">
+
+Copy the provided example file and fill in your Firebase values:
+
+```bash
+cp .env.example .env.local
+```
+
+Open `.env.local` in your editor and populate all six variables. Find the values in **Firebase Console → Project Settings → Your apps → Web app → SDK setup and configuration**:
+
+```bash
+# .env.local — your Firebase project credentials
+# Never commit this file to version control.
+
+VITE_FIREBASE_API_KEY=AIzaSy...
+VITE_FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=123456789012
+VITE_FIREBASE_APP_ID=1:123456789012:web:abc123def456
+```
+
+| Variable | Where to find it | Description |
+|---|---|---|
+| `VITE_FIREBASE_API_KEY` | SDK config → `apiKey` | Identifies your Firebase project to the SDK |
+| `VITE_FIREBASE_AUTH_DOMAIN` | SDK config → `authDomain` | OAuth redirect and popup domain |
+| `VITE_FIREBASE_PROJECT_ID` | SDK config → `projectId` | Firestore database and project identifier |
+| `VITE_FIREBASE_STORAGE_BUCKET` | SDK config → `storageBucket` | Cloud Storage bucket (used for future features) |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | SDK config → `messagingSenderId` | Cloud Messaging sender number |
+| `VITE_FIREBASE_APP_ID` | SDK config → `appId` | Unique identifier for this web app registration |
+
+<Info>
+  Vite reads files named `.env.local` automatically and keeps them out of version control by default. Never commit `.env.local` — it contains credentials tied to your Firebase billing account.
+</Info>
+
+</Step>
+
+<Step title="Install dependencies and run the dev server">
+
+```bash
+npm install
+npm run dev
+```
+
+Vite starts a dev server at `http://localhost:5173`. Open that address in your browser and confirm the login page loads. Sign in with the Google account you used to create the Firebase project — it will be your first user.
+
+<Note>
+  Hot Module Replacement (HMR) is intentionally disabled in `vite.config.js` because the app is designed to run behind a code-server reverse proxy. Reload the browser manually after making source changes during local development.
+</Note>
+
+</Step>
+
+<Step title="Build the production bundle">
+
+When you are ready to deploy, generate the static `dist/` directory:
+
+```bash
+npm run build
+```
+
+Vite outputs optimised, hashed assets to `dist/`. The production build sets `base: './'` so all asset references are relative — the bundle works correctly from any subdirectory or domain without further configuration.
+
+Preview the build locally before deploying:
+
+```bash
+npm run preview
+```
+
+</Step>
+
+<Step title="Deploy dist/ to your host">
+
+The `dist/` directory is a self-contained static site. How you serve it depends on your infrastructure:
+
+**Generic VPS (nginx example)**
+
+Upload `dist/` to your server and configure nginx to serve it, making sure all routes fall back to `index.html` (Webtile uses `HashRouter`, so the server never needs to resolve sub-paths — any `404` on a `.html`-less path should return `index.html`):
+
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.example;
+    root /var/www/webtile;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+**GitHub Actions + SCP (reference CI pipeline)**
+
+The repository ships a workflow at `.github/workflows/deploy.yml` that builds the app and copies `dist/` to a VPS via SCP on every push to `main`. Add the following secrets to your GitHub repository (**Settings → Secrets and variables → Actions**):
+
+| Secret | Description |
+|---|---|
+| `VITE_FIREBASE_API_KEY` | Firebase API key |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase auth domain |
+| `VITE_FIREBASE_PROJECT_ID` | Firebase project ID |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID |
+| `VITE_FIREBASE_APP_ID` | Firebase app ID |
+| `SSH_HOST` | IP address or hostname of your VPS |
+| `SSH_USER` | SSH username on the VPS |
+| `SSH_KEY` | Private SSH key (the public key must be in `~/.ssh/authorized_keys` on the VPS) |
+| `SSH_PORT` | SSH port (usually `22`) |
+
+The workflow installs Node 24, runs `npm install && npm run build` with the Firebase secrets injected as environment variables, then SCPs `dist/` to `/home/ubuntu/docker/projects/mi-app-react/` on the target VPS. Adjust the `target` path in the workflow to match your server layout.
+
+**Static hosting platforms**
+
+For Netlify, Vercel, or Cloudflare Pages, set the six `VITE_FIREBASE_*` environment variables in the platform's dashboard and point the build command at `npm run build` with the output directory set to `dist`. No additional configuration is needed.
+
+</Step>
+
+<Step title="Set Firestore security rules">
+
+By default, Firestore databases created in production mode deny all reads and writes. You need to add rules that allow each authenticated user to read and write **only their own data**.
+
+All Webtile data lives under the path `users/{uid}/projects/{pid}` (and sub-collections beneath it). The following rules enforce that only the owner of a UID can access documents under that path:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A user may only read and write documents under their own UID subtree.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == uid;
+    }
+
+    // Deny everything else explicitly.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+```
+
+To deploy these rules:
+
+1. In the Firebase Console, go to **Firestore Database → Rules**.
+2. Replace the existing rules with the block above.
+3. Click **Publish**.
+
+Alternatively, install the [Firebase CLI](https://firebase.google.com/docs/cli) and deploy from the command line:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+<Warning>
+  Without proper security rules, any authenticated Firebase user — including users who sign up on your instance — could query or overwrite any other user's projects and sprites. The rules above ensure that each user's data (`users/{uid}/...`) is only accessible when `request.auth.uid` matches the `uid` path segment.
+</Warning>
+
+</Step>
+
+</Steps>
+
+## Firestore Data Layout
+
+For reference, here is the full data structure Webtile creates in Firestore. If you need to write backup scripts, migration tooling, or additional security rules, this is the canonical shape:
+
+```
+users/{uid}/
+  projects/{pid}
+    name, createdAt, updatedAt
+
+  projects/{pid}/maps/{mid}
+    name, tileW, tileH, mapW, mapH, doubleWidth
+    mapTiles: int[]        # flat array: -1=empty, tileRow*1000+tileCol=tile
+    hasTileset: bool
+    createdAt, updatedAt
+
+  projects/{pid}/maps/{mid}/assets/tileset
+    data: string           # base64 data URL of the tileset PNG
+    naturalW: number
+    naturalH: number
+
+  projects/{pid}/sprites/{sid}
+    name
+    videoMode: 0 | 1 | 2   # CPC video mode
+    width, height
+    palette: int[]          # CPC colour index per ink slot
+    frames: [{pixels: int[]}]  # ink index per pixel (0 = transparent)
+    createdAt, updatedAt
+```

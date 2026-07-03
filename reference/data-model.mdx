@@ -1,0 +1,240 @@
+---
+title: "Webtile Firestore Data Model Reference"
+sidebarTitle: "Data Model"
+description: "Complete reference for Webtile's Firestore collection hierarchy, document schemas, tile encoding, and sprite pixel encoding."
+---
+
+Webtile stores all user data in Cloud Firestore using a hierarchical collection structure scoped to each authenticated user. Every project, map, tileset image, and sprite lives under the `users/{uid}` namespace, ensuring that Firestore security rules can trivially restrict access to the document owner. This page documents every collection, document schema, and encoding convention used by the application.
+
+## Collection Hierarchy
+
+```
+users/{uid}/projects/{pid}
+users/{uid}/projects/{pid}/maps/{mid}
+users/{uid}/projects/{pid}/maps/{mid}/assets/tileset
+users/{uid}/projects/{pid}/sprites/{sid}
+```
+
+Projects are the top-level grouping unit. Each project contains any number of maps and sprites as independent subcollections. Tileset image data lives in a fixed sub-document (`assets/tileset`) beneath each map document, keeping large base64 payloads out of the map document itself and within Firestore's 1 MiB per-document limit.
+
+---
+
+## Project Document
+
+**Path:** `users/{uid}/projects/{pid}`
+
+The project document holds only lightweight metadata. Heavy data such as tile arrays and tileset images are stored in child documents.
+
+<ParamField path="name" type="string" required>
+  Human-readable project name chosen by the user.
+</ParamField>
+
+<ParamField path="createdAt" type="Timestamp" required>
+  Firestore server timestamp set once when the project is first created.
+</ParamField>
+
+<ParamField path="updatedAt" type="Timestamp" required>
+  Firestore server timestamp refreshed whenever any map or sprite within the project is saved.
+</ParamField>
+
+---
+
+## Map Document
+
+**Path:** `users/{uid}/projects/{pid}/maps/{mid}`
+
+Each map document describes the tilemap grid dimensions, per-tile pixel dimensions, display options, and the full flat tile array. Maps are ordered by `createdAt` ascending when listed.
+
+<ParamField path="name" type="string" required>
+  Human-readable map name displayed in the MAPS navigation menu.
+</ParamField>
+
+<ParamField path="tileW" type="number" required>
+  Width of a single tile in pixels (e.g. `16`).
+</ParamField>
+
+<ParamField path="tileH" type="number" required>
+  Height of a single tile in pixels (e.g. `16`).
+</ParamField>
+
+<ParamField path="mapW" type="number" required>
+  Map width expressed in tiles (number of columns).
+</ParamField>
+
+<ParamField path="mapH" type="number" required>
+  Map height expressed in tiles (number of rows).
+</ParamField>
+
+<ParamField path="doubleWidth" type="boolean" required>
+  When `true`, each tile cell is rendered at 2× its natural pixel width. Used to simulate the wide-pixel aspect ratio of CPC Mode 0 graphics.
+</ParamField>
+
+<ParamField path="mapTiles" type="number[]" required>
+  Flat integer array of length `mapW × mapH` stored in row-major order. See [Tile Encoding](#tile-encoding) below for the encoding rules.
+</ParamField>
+
+<ParamField path="hasTileset" type="boolean" required>
+  `true` when a tileset image has been uploaded for this map and the `assets/tileset` sub-document exists.
+</ParamField>
+
+<ParamField path="createdAt" type="Timestamp" required>
+  Server timestamp set when the map is first created.
+</ParamField>
+
+<ParamField path="updatedAt" type="Timestamp" required>
+  Server timestamp refreshed on every auto-save (debounced 2 seconds after the last tile paint).
+</ParamField>
+
+---
+
+## Tileset Sub-Document
+
+**Path:** `users/{uid}/projects/{pid}/maps/{mid}/assets/tileset`
+
+The tileset image is stored in a dedicated sub-document rather than inline in the map document to avoid exceeding Firestore's 1 MiB document size limit. It is only written when `hasTileset` is `true` on the parent map document.
+
+<ParamField path="data" type="string" required>
+  The tileset PNG encoded as a base64 data URL (e.g. `data:image/png;base64,…`). Written by `projectService.js` after converting any blob URL to base64 before persisting.
+</ParamField>
+
+<ParamField path="naturalW" type="number" required>
+  Natural (intrinsic) pixel width of the tileset image.
+</ParamField>
+
+<ParamField path="naturalH" type="number" required>
+  Natural (intrinsic) pixel height of the tileset image.
+</ParamField>
+
+---
+
+## Sprite Document
+
+**Path:** `users/{uid}/projects/{pid}/sprites/{sid}`
+
+Sprite documents store CPC-format sprites including palette assignments and multi-frame pixel data. Sprites are loaded in full on demand; `listSprites` returns summaries (no pixel data) ordered by `createdAt` ascending.
+
+<ParamField path="name" type="string" required>
+  Human-readable sprite name displayed in the SPRITES navigation menu.
+</ParamField>
+
+<ParamField path="videoMode" type="0 | 1 | 2" required>
+  CPC video mode. Controls the number of available ink slots and the hardware byte encoding used during export.
+
+  | Value | Mode | Max inks | Pixels per byte |
+  |-------|------|----------|-----------------|
+  | `0`   | Mode 0 | 16 | 2 |
+  | `1`   | Mode 1 | 4  | 4 |
+  | `2`   | Mode 2 | 2  | 8 |
+</ParamField>
+
+<ParamField path="width" type="number" required>
+  Sprite canvas width in pixels.
+</ParamField>
+
+<ParamField path="height" type="number" required>
+  Sprite canvas height in pixels.
+</ParamField>
+
+<ParamField path="palette" type="number[]" required>
+  Array of CPC hardware color indices, one entry per ink slot. The length matches the number of available inks for the selected `videoMode` (16, 4, or 2). CPC color indices are integers in the range 0–26.
+</ParamField>
+
+<ParamField path="frames" type="Array<{pixels: number[]}>" required>
+  Array of animation frames. Each frame contains a single `pixels` field — a flat, row-major array of ink indices of length `width × height`. See [Sprite Pixel Encoding](#sprite-pixel-encoding) below.
+</ParamField>
+
+<ParamField path="createdAt" type="Timestamp" required>
+  Server timestamp set when the sprite is first created.
+</ParamField>
+
+<ParamField path="updatedAt" type="Timestamp" required>
+  Server timestamp refreshed on every auto-save (debounced 1.5 seconds after the last pixel mutation).
+</ParamField>
+
+---
+
+## Tile Encoding
+
+Map tiles are stored in Firestore as a **flat integer array** (`mapTiles`). In memory, the app works with a 2-D array of objects `{col, row, idx} | null`, but `projectService.js` encodes and decodes this representation on every save and load.
+
+**Encoding rules:**
+
+| Cell state | Stored value |
+|------------|--------------|
+| Empty cell | `-1` |
+| Occupied cell | `tileRow * 1000 + tileCol` |
+
+**Decoding** a stored value `v`:
+
+```js
+const tileCol = v % 1000
+const tileRow = Math.floor(v / 1000)
+const idx     = tileRow * tilesetCols + tileCol
+```
+
+**Example** — a tile at column 3, row 2 of the tileset is stored as `2003`.
+
+```js
+// Encode (from projectService.js)
+function encodeTiles(mapTiles) {
+  return mapTiles.flat().map(t => (t ? t.row * 1000 + t.col : -1))
+}
+
+// Decode (from projectService.js)
+function decodeTiles(flat, mapW, mapH, tilesetCols) {
+  const grid = []
+  for (let r = 0; r < mapH; r++) {
+    const row = []
+    for (let c = 0; c < mapW; c++) {
+      const v = flat[r * mapW + c]
+      if (v === -1 || v == null) {
+        row.push(null)
+      } else {
+        const tCol = v % 1000
+        const tRow = Math.floor(v / 1000)
+        row.push({ col: tCol, row: tRow, idx: tRow * tilesetCols + tCol })
+      }
+    }
+    grid.push(row)
+  }
+  return grid
+}
+```
+
+<Warning>
+  The encoding assumes the tileset image is **fewer than 1000 tiles wide**. If a tileset has 1000 or more tile columns, column indices will overflow into the row component of the encoded value and the map will load incorrectly.
+</Warning>
+
+---
+
+## Sprite Pixel Encoding
+
+Each frame's `pixels` field is a **flat, row-major array** of ink indices of length `width × height`.
+
+- **Index `0`** — transparent (background shows through). The eraser tool and initial canvas state both write `0`.
+- **Indices `1–N`** — correspond to ink slots 1 through N, where N is the number of inks for the sprite's `videoMode` (16 for Mode 0, 4 for Mode 1, 2 for Mode 2).
+
+To convert a `(x, y)` coordinate to an array offset:
+
+```js
+const offset = y * width + x
+const inkIndex = pixels[offset]
+```
+
+During CPC export (`generateExport` in `SpriteEditor.jsx`), ink indices are mapped through the `palette` array to obtain CPC hardware color values, then packed into bytes according to the video mode's bit-plane layout.
+
+---
+
+## Old-Schema Migration
+
+<Note>
+  Early versions of Webtile stored map configuration fields (`tileW`, `tileH`, `mapW`, `mapH`, `mapTiles`, etc.) **directly on the project document** and kept the tileset at `projects/{pid}/assets/tileset` rather than under a maps subcollection.
+
+  When `loadProject` detects the old schema (presence of `tileW` on the project document) it automatically calls `migrateOldProject()` in `projectService.js`. This function:
+
+  1. Checks whether the `maps` subcollection already has documents (to avoid double-migration).
+  2. Creates a new map document under `users/{uid}/projects/{pid}/maps/{mid}` with the inline map data.
+  3. Copies the old tileset document from `projects/{pid}/assets/tileset` to the new path `maps/{mid}/assets/tileset`.
+
+  No manual intervention is required — the migration runs transparently on first load.
+</Note>

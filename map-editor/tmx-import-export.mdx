@@ -1,0 +1,110 @@
+---
+title: "TMX Import and Export for Tiled Map Compatibility"
+sidebarTitle: "TMX Import & Export"
+description: "Export Webtile maps to Tiled-compatible TMX files with CSV tile data, or import existing TMX files to continue editing in the browser."
+---
+
+Webtile can read and write the TMX format — the XML-based map format used by the [Tiled map editor](https://www.mapeditor.org/). This makes it straightforward to move maps between Webtile and desktop tools: export a `.tmx` plus its tileset PNG from Webtile, open them in Tiled, refine the layout, then import the updated `.tmx` back into Webtile. Both directions are available from the **MAPS** menu in the top navigation bar.
+
+## Export TMX
+
+**MAPS → ⬇ EXPORT .TMX** downloads the active map as a `.tmx` file. The file is generated entirely in the browser from the current `mapConfig` and `mapTiles` state — no round-trip to the server is needed.
+
+The exported XML structure is:
+
+- A root `<map>` element carrying `width`, `height`, `tilewidth`, `tileheight`, and Tiled metadata attributes
+- A `<tileset>` block (when a tileset is loaded) with `firstgid="1"`, the column count, total tile count, and an `<image>` element referencing `tileset.png`
+- A `<layer>` element with a `<data encoding="csv">` block containing the tile indices as comma-separated integers
+
+**Tile encoding in the CSV:**
+
+Each cell value is computed as:
+
+```
+gid = tileRow × tilesetCols + tileCol + 1
+```
+
+An empty cell is written as `0`. The `+ 1` offset aligns with Tiled's convention where GID 0 always means "no tile" and tile indices start at `firstgid` (1 in Webtile's output).
+
+The filename is derived from the map name (e.g. `Forest Level 1.tmx`).
+
+<Note>
+  The tileset image path in every exported TMX is always hardcoded as `tileset.png`. The actual tileset PNG file is **not** embedded in the TMX — it must be exported separately using **MAPS → ⬇ EXPORT TILESET** and placed in the same directory as the `.tmx` file for Tiled (or other tools) to locate it.
+</Note>
+
+### Example exported TMX
+
+A map named `demo` that is 4 tiles wide by 3 tiles tall, using 16×16 px tiles and a 32×16 px tileset (2 columns, 1 row), would produce:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal"
+     renderorder="right-down" width="4" height="3"
+     tilewidth="16" tileheight="16" infinite="0"
+     nextlayerid="2" nextobjectid="1">
+ <tileset firstgid="1" name="tileset" tilewidth="16" tileheight="16"
+          tilecount="2" columns="2">
+  <image source="tileset.png" width="32" height="16"/>
+ </tileset>
+ <layer id="1" name="Tile Layer 1" width="4" height="3">
+  <data encoding="csv">
+1,2,0,1,
+2,1,2,0,
+0,1,2,1
+  </data>
+ </layer>
+</map>
+```
+
+In this example GID `1` is the tile at column 0, row 0 of the tileset; GID `2` is the tile at column 1, row 0; and `0` is an empty cell.
+
+---
+
+## Import TMX
+
+**MAPS → ↑ IMPORT .TMX** opens a file picker that accepts `.tmx` files. Importing creates a **new map** in the current project using the dimensions and tile data read from the file.
+
+<Steps>
+  <Step title="Pick the .tmx file">
+    Click **MAPS → ↑ IMPORT .TMX**. A hidden `<input type="file" accept=".tmx">` is activated. Select a `.tmx` file from your filesystem.
+  </Step>
+  <Step title="Parse the XML">
+    The file is read as text and parsed with the browser's built-in `DOMParser`. Webtile reads:
+    - `<map width>`, `<map height>` → map dimensions in tiles
+    - `<map tilewidth>`, `<map tileheight>` → tile size in pixels
+    - `<tileset columns>`, `<tileset firstgid>` → tileset column count and GID offset
+    - `<data encoding="csv">` → the raw tile index list
+  </Step>
+  <Step title="Rehydrate mapTiles">
+    Each CSV value is converted back to a `{col, row, idx}` tile reference:
+    ```
+    idx = gid − firstgid
+    col = idx % tilesetCols
+    row = Math.floor(idx / tilesetCols)
+    ```
+    Cells with GID `0` remain `null` (empty). The result is stored as Webtile's 2D `mapTiles` array.
+  </Step>
+  <Step title="Create and activate the map">
+    A new map document is created in Firestore using the parsed dimensions and tile size. The map is immediately activated in the editor and the imported tile data is saved. The map name is taken from the filename (without the `.tmx` extension).
+  </Step>
+</Steps>
+
+<Warning>
+  Only **CSV-encoded** TMX files are supported for import (`<data encoding="csv">`). TMX files using base64 encoding, zlib/gzip compression, or other encodings will not have their tile data loaded — the map will be created with the correct dimensions but all cells will be empty.
+</Warning>
+
+<Note>
+  Importing a TMX does **not** import the tileset image. After importing, open the right sidebar and use the **Load** button in the Tileset panel to load the corresponding PNG. The tile indices in the map data will align correctly as long as you load the same tileset that was used when the TMX was created.
+</Note>
+
+---
+
+## Export Tileset PNG
+
+**MAPS → ⬇ EXPORT TILESET** downloads the currently loaded tileset as `tileset.png`. This is the companion step to TMX export — Tiled needs the PNG file in the same directory as the `.tmx` to display tile graphics.
+
+If you have made pixel-level edits to tiles using the right sidebar's tile editor, the exported PNG reflects those changes, since the export reads directly from the in-memory tileset canvas.
+
+<Info>
+  The **EXPORT TILESET** menu item is disabled (greyed out) when no tileset is loaded for the active map.
+</Info>

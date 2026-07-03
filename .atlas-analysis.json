@@ -1,0 +1,88 @@
+{
+  "projectType": "saas",
+  "projectName": "Webtile",
+  "projectDescription": "A browser-based tilemap and sprite editor for CPC-style retro game assets, backed by Firebase authentication and Firestore cloud storage.",
+  "theme": "luma",
+  "primaryColor": "#2152ff",
+  "lightColor": "#21d4fd",
+  "darkColor": "#2152ff",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "self-hosting"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/projects-and-maps",
+              "concepts/sprites",
+              "concepts/tilesets"
+            ]
+          },
+          {
+            "group": "Map Editor",
+            "pages": [
+              "map-editor/overview",
+              "map-editor/tools-and-shortcuts",
+              "map-editor/tmx-import-export"
+            ]
+          },
+          {
+            "group": "Sprite Editor",
+            "pages": [
+              "sprite-editor/overview",
+              "sprite-editor/tools-and-shortcuts",
+              "sprite-editor/cpc-video-modes",
+              "sprite-editor/import-export"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/data-model",
+              "reference/firebase-configuration",
+              "reference/keyboard-shortcuts"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Browser-based tilemap editor with stamp, fill, and eraser tools",
+    "CPC sprite editor supporting Mode 0, Mode 1, and Mode 2 video modes",
+    "Firebase Auth with Google OAuth and email/password login",
+    "Firestore cloud persistence with auto-save (2 s debounce)",
+    "TMX import/export compatible with the Tiled map editor",
+    "Tileset PNG import/export from the right sidebar",
+    "Sprite PNG and JASC-PAL palette import/export",
+    "CPC ASM/BASIC byte-format sprite export with mask interleaving",
+    "Multi-map projects with per-map undo history (50 snapshots)",
+    "Zoom levels from 0.25× to 8× in the map editor"
+  ],
+  "publicApiSurface": [
+    "createProject(userId, { name })",
+    "loadProject(userId, projectId)",
+    "listProjects(userId)",
+    "deleteProject(userId, projectId)",
+    "createMap(userId, projectId, { name, tileW, tileH, mapW, mapH, doubleWidth })",
+    "saveMap(userId, projectId, mapId, { name, config, mapTiles, tileset, tilesetBlobUrl })",
+    "loadMap(userId, projectId, mapId)",
+    "listMaps(userId, projectId)",
+    "deleteMap(userId, projectId, mapId)",
+    "createSprite(userId, projectId, { name, videoMode, width, height })",
+    "loadSprite(userId, projectId, spriteId)",
+    "saveSprite(userId, projectId, spriteId, spriteData)",
+    "listSprites(userId, projectId)",
+    "deleteSprite(userId, projectId, spriteId)",
+    "createSpriteFromImport(userId, projectId, spriteData)"
+  ]
+}

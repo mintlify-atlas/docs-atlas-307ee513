@@ -1,0 +1,121 @@
+---
+title: "Map Editor: Painting Tile-Based Game Worlds"
+sidebarTitle: "Overview"
+description: "Explore the Webtile map editor's layout, viewport controls, zoom levels, and the right sidebar tileset panel and minimap."
+---
+
+The Webtile map editor is your primary workspace for building tile-based game worlds in the browser. Once a project is loaded and at least one map has been created (or imported), the editor fills the screen with a zoomable canvas, a contextual toolbar, and a right sidebar packed with tileset controls. Every change is auto-saved to Firestore two seconds after your last brush stroke, so you never have to think about saving manually.
+
+## Editor states
+
+The main content area is never blank — it always renders one of four views depending on what is currently loaded:
+
+| State | Condition | What you see |
+|-------|-----------|--------------|
+| **EmptyWorkspace** | No project loaded | A welcome panel prompting you to create or load a project |
+| **NoMaps** | Project loaded, but no maps | A prompt with **+ New Map** and **↑ Import .TMX** buttons |
+| **SpriteEditor** | A sprite is selected | The full CPC sprite editor replaces the map canvas |
+| **TilemapGrid** | A project and a map are active, no sprite selected | The normal map editing view described on this page |
+
+## Screen layout
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  WEBTILE │ PROJECTS ▼ │ MAPS ▼ │ SPRITES ▼  │ Map Name  │
+├──────────┬──────────────────────────────────┬───────────┤
+│  Toolbar │                                  │  Minimap  │
+│ (STAMP / │      TilemapGrid canvas          ├───────────┤
+│  FILL /  │      (scrollable, zoomable)      │  Tileset  │
+│  ERASE / │                                  │  Panel    │
+│  2×W /   │                                  ├───────────┤
+│  UNDO)   │                                  │ Tile      │
+│          │                                  │ Editor    │
+└──────────┴──────────────────────────────────┴───────────┘
+```
+
+### Top navigation bar
+
+The header bar runs the full width and contains three menus on the left, a center breadcrumb, and a user/logout control on the right.
+
+**PROJECTS menu**
+- **NEW PROJECT** — opens the New Project modal
+- **LOAD PROJECT** — opens the project picker
+- **CLOSE PROJECT** — unloads the current project and all its maps
+
+**MAPS menu** *(disabled until a project is loaded)*
+- Lists all maps in the project; click a map to switch to it, or press **DEL** to delete it
+- **+ NEW MAP** — opens the New Map modal
+- **↑ IMPORT .TMX** — triggers a file-picker for a Tiled `.tmx` file
+- **⬇ EXPORT .TMX** — downloads the active map as a `.tmx` file *(requires an active map)*
+- **⬇ EXPORT TILESET** — downloads the tileset as `tileset.png` *(requires a loaded tileset)*
+- **CLOSE MAP** — unloads the active map without closing the project
+
+**SPRITES menu** *(disabled until a project is loaded)*
+- Lists all sprites; click a sprite to open it in the sprite editor
+- **+ NEW SPRITE** — opens the New Sprite modal
+- **↑ LOAD PNG** — imports a PNG as a new sprite
+
+**Center breadcrumb**
+
+While a map is open and no sprite is selected, the breadcrumb shows the map name and its dimensions, e.g. `Forest Level 1  32×24 · 16×16px`. A save-status indicator (`· Saving…`, `· Saved`, or `· Save error`) appears here during and after auto-save.
+
+### Toolbar
+
+The horizontal toolbar sits below the navigation bar and is only visible when a map is active and no sprite is selected. It contains the paint tool buttons (Stamp, Fill, Eraser), zoom out/in controls with a current-zoom readout, the Undo button, and the 2×W double-width toggle. Full details are in [Tools & Shortcuts](/map-editor/tools-and-shortcuts).
+
+### TilemapGrid canvas
+
+The canvas is a scrollable, zoomable CSS grid of tile-sized cells — one `<div>` per cell. Each cell is rendered as a `background-image` slice of the tileset PNG with `image-rendering: pixelated` to keep pixel edges crisp at all zoom levels.
+
+Empty cells (no tile painted) render as a two-color checkerboard using CSS variables `--bg` and `--bg2`, making it easy to see which cells are still blank. A thin border is drawn between cells using `--border`.
+
+When you hover over the grid, an absolutely-positioned overlay previews the tile you are about to place (amber outline) or shows a red tint for the Eraser. A coordinate readout above the grid (`tile 5, 3`, for example) updates in real time as you move the pointer.
+
+### Right sidebar
+
+The 220 px-wide right sidebar is always visible while you are in map editing mode. It is composed of three stacked sections from top to bottom:
+
+**Minimap**
+
+A ~56 px-wide canvas rendering of the entire map at a reduced scale. It updates live as you paint, giving a bird's-eye view of the full composition. The map dimensions and tile size are printed next to it.
+
+**Tileset panel**
+
+Displays the loaded tileset image scaled to fill the sidebar width, with a grid overlay that subdivides it into individual tiles. Click any tile to select it as the active stamp tile — the selected tile is highlighted with a green border and glow. The currently selected tile coordinates are shown as `[col, row]` above the image. A **Load** / **Change** button at the top of the panel opens a file picker that accepts PNG, JPG, and GIF images.
+
+If no tileset is loaded yet, the panel shows an empty-state placeholder and a **Load Image** button.
+
+**Tile pixel editor**
+
+When a tile is selected and a tileset is loaded, a per-tile pixel editor appears below the tileset panel. It renders the selected tile at a zoomed scale (auto-computed to fit ~180 px), shows a pixel grid, and lets you paint individual pixels using the 27-color Amstrad CPC hardware palette or any arbitrary hex color. Right-click erases a pixel. An eyedropper tool samples any pixel back into the active color.
+
+Changes made in the tile editor are written directly into the tileset canvas and trigger an auto-save.
+
+## Zoom levels
+
+The map canvas supports six discrete zoom levels:
+
+```
+0.25×  0.5×  1×  2×  4×  8×
+```
+
+At zoom levels below `1×`, the label is shown as a percentage (`25%`, `50%`). At `1×` and above it shows as a multiplier (`1×`, `2×`, …`8×`).
+
+You can change the zoom in three ways:
+
+- **Ctrl++** / **Ctrl+-** keyboard shortcuts
+- The **IN** / **OUT** toolbar buttons
+- Scrolling the mouse wheel over the canvas
+
+## Double-width mode
+
+The **2×W** toolbar button (keyboard shortcut **D**) toggles `doubleWidth` mode. When enabled, every tile cell is stretched to twice its normal horizontal width — matching the natural pixel-art aspect ratio of Amstrad CPC Mode 0 graphics where each hardware pixel is twice as wide as it is tall.
+
+<CardGroup cols={2}>
+  <Card title="Tools & Shortcuts" icon="keyboard" href="/map-editor/tools-and-shortcuts">
+    Full reference for the Stamp, Fill, and Eraser tools, undo history, zoom controls, and every keyboard shortcut in the map editor.
+  </Card>
+  <Card title="TMX Import & Export" icon="file-export" href="/map-editor/tmx-import-export">
+    How to exchange maps with the Tiled editor using the TMX XML format, including a walkthrough of the CSV tile encoding.
+  </Card>
+</CardGroup>

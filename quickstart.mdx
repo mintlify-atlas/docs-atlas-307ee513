@@ -1,47 +1,127 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Webtile in Minutes"
+sidebarTitle: "Quickstart"
+description: "Learn how to sign in, create a project, paint your first tilemap, and export a TMX file with Webtile in under five minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+Webtile gets you from a blank screen to a painted tilemap in just a few steps. This guide walks through signing in, setting up a project, importing a tileset, painting tiles, and exporting your map as a `.tmx` file ready for your game engine.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
 
-    ```bash
-    npm install your-package
-    ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+<Step title="Sign in">
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+Navigate to your Webtile instance. You will land on the login page (`#/login`) because the editor is behind a protected route.
 
-    ```bash
-    your-cli start
-    ```
-  </Step>
-</Steps>
+Choose one of the two sign-in methods:
+
+- **Sign in with Google** — click the Google button to open an OAuth popup. Approve the prompt and you will be redirected to the editor automatically.
+- **Email and password** — enter your email address and password, then click **Sign In**. If you don't have an account yet, use the registration form on the same page. Forgot your password? Follow the **Forgot password** link to `#/forgot-password`.
+
+While Firebase Auth initialises you will briefly see a loading screen with blinking dots — this is normal.
+
+</Step>
+
+<Step title="Create a new project">
+
+Once you are signed in you will see the **EmptyWorkspace** view. Every map and sprite in Webtile belongs to a project, so the first thing to do is create one.
+
+1. Open the **PROJECTS** menu in the top navigation bar.
+2. Click **New**.
+3. Enter a project name in the dialog that appears and confirm.
+
+The breadcrumb in the centre of the top bar will update to show your new project name. You are now in the **NoMaps** view — the project exists but has no maps yet.
+
+</Step>
+
+<Step title="Create a new map">
+
+1. Open the **MAPS** menu.
+2. Click **New**.
+3. Fill in the map configuration fields:
+
+| Field | What it controls |
+|---|---|
+| **tileW** | Width of a single tile in pixels |
+| **tileH** | Height of a single tile in pixels |
+| **mapW** | Map width in tiles (number of columns) |
+| **mapH** | Map height in tiles (number of rows) |
+| **doubleWidth** | When enabled, each tile is rendered at double its pixel width — useful for CPC Mode 0 aspect-ratio correction |
+
+4. Confirm to create the map. The editor switches to **TilemapGrid** view and the centre breadcrumb shows the map name and its total pixel dimensions.
+
+</Step>
+
+<Step title="Import a tileset PNG">
+
+The grid is empty until you load a tileset image. The right sidebar is where you manage tilesets.
+
+1. Locate the **import tileset** button in the right sidebar (the sidebar that appears on the right edge of the editor).
+2. Click it and select a PNG file from your machine. The PNG should contain your tiles arranged in a regular grid where each cell is `tileW × tileH` pixels.
+3. Once imported, the right sidebar displays the tileset as a clickable grid. Individual tiles can also be edited directly inside the sidebar's per-tile pixel editor.
+
+The tileset is saved to Firestore automatically as a base64 data URL and will reload with your project on future visits.
+
+</Step>
+
+<Step title="Select a tile and paint the grid">
+
+With a tileset loaded you can start painting:
+
+1. **Select a tile** — click any tile in the right sidebar tileset panel. A highlight indicates the active selection.
+2. **Paint** — click and drag on the main grid to stamp the selected tile onto cells. A hover preview shows where the tile will be placed before you click.
+3. **Erase** — right-click on any cell to erase it. Erased cells render as a checkerboard pattern indicating they are empty.
+4. **Zoom** — scroll the mouse wheel over the grid to zoom in and out, or use `Ctrl++` / `Ctrl+-`.
+
+The grid uses CSS rendering with `image-rendering: pixelated` so tiles stay crisp at every zoom level.
+
+</Step>
+
+<Step title="Switch between tools">
+
+Webtile provides three main painting tools you can switch between at any time:
+
+- **Stamp (`S`)** — the default tool. Click or drag to place the selected tile.
+- **Fill (`F`)** — flood-fills all contiguous cells that share the same tile as the clicked cell, replacing them with the selected tile. Uses a breadth-first search so it wraps correctly around irregular shapes.
+- **Eraser (`E`)** — click or drag to clear cells back to empty.
+
+You can activate any tool from the toolbar at the top of the editor, or press the keyboard shortcut shown in parentheses.
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  Use `Ctrl+Z` to undo your last tile operation. Webtile keeps up to 50 undo steps in memory.
 </Tip>
+
+</Step>
+
+<Step title="Export the map as TMX">
+
+When you are happy with your map:
+
+1. Open the **MAPS** menu.
+2. Click **Export TMX**.
+3. Webtile generates a Tiled-compatible `.tmx` XML file with the tileset image path embedded and the tile data encoded as CSV. Your browser downloads the file automatically.
+
+You can import this file into Tiled or parse it directly in your game engine. Webtile can also re-import a `.tmx` file later via **MAPS → Import TMX** to continue editing.
+
+</Step>
+
+</Steps>
+
+<Note>
+  Webtile saves your map automatically — you do not need a save shortcut. Every time you paint a tile, a 2-second debounce timer starts. When it fires, the current state of the map (tiles, config, and tileset) is written to Firestore. The toolbar displays a save-status indicator so you can see when a save is in progress or has completed.
+</Note>
+
+<Tip>
+  Press `Ctrl+Z` at any time to undo the last tile paint. Webtile maintains a history stack of up to 50 snapshots in memory. The UNDO button in the toolbar is greyed out when there is nothing left to undo.
+</Tip>
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|---|---|
+| `S` | Activate Stamp tool |
+| `F` | Activate Fill tool |
+| `E` | Activate Eraser tool |
+| `D` | Toggle double-width rendering |
+| `Ctrl+Z` | Undo last tile operation |
+| `Ctrl++` | Zoom in |
+| `Ctrl+-` | Zoom out |

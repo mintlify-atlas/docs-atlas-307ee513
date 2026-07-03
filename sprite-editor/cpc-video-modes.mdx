@@ -1,0 +1,157 @@
+---
+title: "CPC Video Modes: Encoding Sprites for Amstrad Hardware"
+sidebarTitle: "CPC Video Modes"
+description: "Understand how Webtile's three CPC video modes — Mode 0, Mode 1, and Mode 2 — affect color depth, pixel packing, and byte-format export."
+---
+
+The Amstrad CPC's video hardware offers three distinct screen modes, each trading color depth for horizontal pixel resolution. Webtile models this directly: every sprite has a `videoMode` field (0, 1, or 2) that controls how many ink slots are available, how pixels are sized on the editing canvas, and how frames are encoded into CPC hardware bytes when you export. Choosing the right mode at the start of a project is essential, because pixel encoding — and therefore the byte output — changes fundamentally between modes.
+
+## Mode Overview
+
+| Mode | Colors | Pixels / byte | Canvas pixel width | Use case |
+|------|--------|--------------|-------------------|----------|
+| 0 | 16 | 2 | 16 screen px (base) | Rich color sprites with wide pixels |
+| 1 | 4 | 4 | 8 screen px (base) | Balanced color and horizontal resolution |
+| 2 | 2 | 8 | 4 screen px (base) | High-resolution monochrome or 1-bit art |
+
+The "canvas pixel width" column shows the base cell width in screen pixels at zoom ×1. All three modes share the same base cell height of 8 screen pixels.
+
+---
+
+## Mode 0 — 16 Colors, 2 Pixels per Byte
+
+Mode 0 gives the widest color palette (16 simultaneous hardware colors) at the cost of horizontal resolution. Each byte encodes exactly **2 CPC pixels** using interleaved bit planes:
+
+```
+Bit layout per byte (p0 = left pixel, p1 = right pixel):
+  Bit 7 = p0 bit 0    Bit 6 = p1 bit 0
+  Bit 5 = p0 bit 1    Bit 4 = p1 bit 1
+  Bit 3 = p0 bit 2    Bit 2 = p1 bit 2
+  Bit 1 = p0 bit 3    Bit 0 = p1 bit 3
+```
+
+Because four bits encode each pixel, ink indices 0–15 are all usable. A sprite that is `W` pixels wide produces `W / 2` bytes per row.
+
+**Typical use:** Character sprites, bosses, and other art where rich color is more important than fine horizontal detail.
+
+---
+
+## Mode 1 — 4 Colors, 4 Pixels per Byte
+
+Mode 1 doubles the horizontal pixel density of Mode 0, fitting **4 CPC pixels** into each byte through a different bit-plane interleaving scheme:
+
+```
+Bit layout per byte (p0–p3 left to right):
+  Bit 7 = p0 bit 0    Bit 6 = p2 bit 0
+  Bit 5 = p1 bit 0    Bit 4 = p3 bit 0
+  Bit 3 = p0 bit 1    Bit 2 = p2 bit 1
+  Bit 1 = p1 bit 1    Bit 0 = p3 bit 1
+```
+
+Two bits per pixel means ink indices 0–3. A sprite that is `W` pixels wide produces `W / 4` bytes per row.
+
+**Typical use:** Platformer tiles, UI elements, and other art where a 4-color restriction is acceptable in exchange for sharper horizontal edges.
+
+---
+
+## Mode 2 — 2 Colors, 8 Pixels per Byte
+
+Mode 2 packs **8 CPC pixels** into each byte using a simple 1-bit scheme — no interleaving needed:
+
+```
+Bit 7 = p0  Bit 6 = p1  Bit 5 = p2  Bit 4 = p3
+Bit 3 = p4  Bit 2 = p5  Bit 1 = p6  Bit 0 = p7
+```
+
+Only ink 0 (transparent) and ink 1 are meaningful. A sprite that is `W` pixels wide produces `W / 8` bytes per row.
+
+**Typical use:** Text glyphs, monochrome icons, high-resolution line art, and anything targeting the full 640-pixel-wide Mode 2 screen.
+
+---
+
+## Ink Index 0 and Transparency
+
+Ink index 0 is **always transparent** in all video modes. It is never painted to the screen during byte export — the mask byte (when mask interleaving is enabled) marks those pixel positions as transparent so the background shows through. In the editor, ink 0 is rendered as the dark checkerboard background rather than a solid color.
+
+<Note>
+  You cannot assign a visible color to ink 0 for export purposes. It is permanently the transparent ink. If you need a true black or background-colored pixel that is not transparent, use ink 1 or higher and assign it the desired CPC hardware color.
+</Note>
+
+---
+
+## Palette
+
+Each sprite stores a `palette` array of CPC hardware color indices — one entry per ink slot. The 27 CPC hardware colors are shared across all modes; what changes is how many palette slots are available:
+
+- **Mode 0:** 16 ink slots (indices 0–15)
+- **Mode 1:** 4 ink slots (indices 0–3)
+- **Mode 2:** 2 ink slots (indices 0–1)
+
+When a sprite is first created, `spriteService.js` pre-populates the palette from `DEFAULT_PALETTES`, which provides a sensible starting set of CPC color indices for each mode:
+
+```js
+const DEFAULT_PALETTES = {
+  0: [0, 26, 6, 18, 3, 11, 24, 15, 8, 20, 4, 2, 21, 5, 16, 13],  // 16 inks
+  1: [0, 26, 6, 18],                                                 // 4 inks
+  2: [0, 26],                                                        // 2 inks
+}
+```
+
+You can reassign any ink slot to any of the 27 CPC hardware colors using the color picker in the right sidebar.
+
+---
+
+## Byte-Format Export
+
+The **EXPORT** button opens the Export modal, which encodes all frames to CPC hardware bytes based on `videoMode`. Two additional encoding options are available:
+
+### Mask Interleaving
+
+When **WITH MASK** is enabled, a mask byte is inserted before each sprite byte in every row. In the mask byte, bits corresponding to transparent pixels (ink 0) are set to `1`; opaque pixel bits are `0`. The resulting interleaved layout per row is:
+
+```
+[mask_byte_0, sprite_byte_0, mask_byte_1, sprite_byte_1, ...]
+```
+
+This layout is directly compatible with the AND-OR sprite drawing routine used in most CPC game engines: `AND` with the mask to punch a hole, then `OR` with the sprite data to paint the sprite.
+
+### CPC Scanline-Interleaved Row Ordering
+
+When **INTERLEAVED** is enabled, rows are re-ordered to match the non-linear CPC screen memory layout. The CPC screen is organised as 25 character rows of 8 scanlines each; consecutive scanlines within a character row are offset by 2048 bytes, while consecutive character rows are offset by 80 bytes. The export reorders sprite rows to match this layout so the data can be `LDIR`-copied directly into screen RAM without runtime reordering.
+
+### Output Formats
+
+Three output formats are available in the Export modal:
+
+| Format | Description |
+|--------|-------------|
+| **HEX** | Z80 assembler `.db` directives with `#XX` hex literals |
+| **DEC** | Z80 assembler `.db` directives with decimal values |
+| **BASIC DATA** | Locomotive BASIC `DATA` lines with decimal values |
+
+A sample Mode 0 ASM export (hex, no mask, no interleave) for a 4×4 sprite looks like:
+
+```asm
+; player | Mode 0 | 4×4 CPC pixels | 1 frame(s)
+; Palette: ink0=0 ink1=26 ink2=6 ink3=18 ...
+;
+; ── Frame 0 ──────────────────────────────
+_player_f0::
+  .db #00,#00  ; row 0
+  .db #F5,#A0  ; row 1
+  .db #F5,#A0  ; row 2
+  .db #00,#00  ; row 3
+
+_player_width  EQU 2
+_player_height EQU 4
+```
+
+<Note>
+  The video mode is fixed at sprite creation time. To change a sprite's mode, create a new sprite with the desired mode and re-import or re-paint the art. The Properties modal does not expose a mode-change option because it would invalidate all existing pixel data and byte widths.
+</Note>
+
+---
+
+## Setting the Video Mode
+
+The video mode is selected when you create a new sprite. In the **SPRITES → New** dialog you choose Mode 0, 1, or 2 along with the sprite's pixel dimensions. For PNG imports via **SPRITES → Import PNG**, the `ImportSpriteModal` lets you pick the video mode before confirming, and the width is automatically snapped to the nearest valid multiple for that mode (2 for Mode 0, 4 for Mode 1, 8 for Mode 2).

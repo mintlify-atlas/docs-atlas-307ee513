@@ -1,0 +1,148 @@
+---
+title: "Firebase Configuration for Webtile"
+sidebarTitle: "Firebase Config"
+description: "All six VITE_FIREBASE_* environment variables required to connect Webtile to a Firebase project, with instructions for finding each value."
+---
+
+Webtile is a Vite-based React application that connects to Firebase for authentication and data storage. All Firebase connection parameters are injected at build time through Vite environment variables prefixed with `VITE_FIREBASE_`. All six variables are required — the application will fail to initialise if any of them is missing or empty.
+
+## Finding Your Firebase Credentials
+
+<Steps>
+  <Step title="Open the Firebase Console">
+    Navigate to [console.firebase.google.com](https://console.firebase.google.com) and select your project (or create a new one).
+  </Step>
+  <Step title="Go to Project Settings">
+    Click the gear icon next to **Project Overview** in the left sidebar, then select **Project settings**.
+  </Step>
+  <Step title="Locate your Web App">
+    Scroll down to the **Your apps** section. If you have not registered a web app yet, click **Add app** and choose the Web platform (`</>`). Give it a nickname and click **Register app**.
+  </Step>
+  <Step title="Copy the SDK configuration">
+    Under **SDK setup and configuration**, select the **Config** radio button. Firebase displays a `firebaseConfig` object containing all six values you need.
+  </Step>
+</Steps>
+
+---
+
+## Environment Variables
+
+<ParamField path="VITE_FIREBASE_API_KEY" type="string" required>
+  The public Web API key for your Firebase project. This key is embedded in client-side JavaScript and is **safe to expose** — Firebase's security is enforced through Firestore security rules and Authentication, not by keeping this key secret.
+
+  Example: `AIzaSyD-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`
+</ParamField>
+
+<ParamField path="VITE_FIREBASE_AUTH_DOMAIN" type="string" required>
+  The OAuth redirect domain used by Firebase Authentication. Must exactly match the value shown in the Firebase Console.
+
+  Example: `your-project.firebaseapp.com`
+</ParamField>
+
+<ParamField path="VITE_FIREBASE_PROJECT_ID" type="string" required>
+  The unique identifier for your Firebase project. Used to construct Firestore document paths.
+
+  Example: `your-project`
+</ParamField>
+
+<ParamField path="VITE_FIREBASE_STORAGE_BUCKET" type="string" required>
+  The default Cloud Storage bucket for your project. Webtile does not use Cloud Storage directly (tileset images are stored as base64 in Firestore), but this value is required by the Firebase SDK initialisation.
+
+  Example: `your-project.appspot.com`
+</ParamField>
+
+<ParamField path="VITE_FIREBASE_MESSAGING_SENDER_ID" type="string" required>
+  The numeric sender ID associated with your Firebase project, used by Firebase Cloud Messaging. Even though Webtile does not use push notifications, the SDK requires this value.
+
+  Example: `123456789012`
+</ParamField>
+
+<ParamField path="VITE_FIREBASE_APP_ID" type="string" required>
+  The unique registration ID for the specific web app within your Firebase project.
+
+  Example: `1:123456789012:web:abcdef1234567890abcdef`
+</ParamField>
+
+---
+
+## `.env.local` Template
+
+Copy `.env.example` to `.env.local` at the repository root and fill in the values from the Firebase Console. Vite automatically loads `.env.local` for local development; it is already listed in `.gitignore` so your credentials will not be committed.
+
+```bash
+# Copy this file to .env.local and fill in your Firebase project values.
+# Find these in: Firebase Console → Project Settings → Your apps → Web app → SDK setup
+
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
+```
+
+<Note>
+  `VITE_FIREBASE_API_KEY` is a **client-side public key**. It is intentionally left blank in `.env.example` so the file can be safely committed to source control without exposing real credentials. Never commit a `.env.local` file or any file that contains actual key values.
+</Note>
+
+---
+
+## Firebase Initialisation
+
+`src/firebase.js` reads the six environment variables and passes them directly to `initializeApp`. The file then exports the `auth` handle, the `db` Firestore handle, and the `googleProvider` used for OAuth sign-in.
+
+```js
+// src/firebase.js
+import { initializeApp } from 'firebase/app'
+import { getAuth, GoogleAuthProvider } from 'firebase/auth'
+import { getFirestore } from 'firebase/firestore'
+
+const firebaseConfig = {
+  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId:             import.meta.env.VITE_FIREBASE_APP_ID,
+}
+
+const app = initializeApp(firebaseConfig)
+export const auth           = getAuth(app)
+export const db             = getFirestore(app)
+export const googleProvider = new GoogleAuthProvider()
+```
+
+---
+
+## Firestore Security Rules
+
+<Warning>
+  Webtile stores all data under `users/{userId}/…`. You **must** configure Firestore security rules to restrict every read and write operation to the authenticated document owner. Without these rules, any logged-in user can read or overwrite any other user's projects.
+</Warning>
+
+The minimal recommended rules enforce that `request.auth.uid` matches the `userId` path segment for every operation:
+
+```js
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // All Webtile data lives under users/{userId}
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
+    }
+
+  }
+}
+```
+
+Deploy these rules from the Firebase Console (**Firestore Database → Rules** tab) or via the Firebase CLI:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+<Tip>
+  During local development you can use the [Firebase Emulator Suite](https://firebase.google.com/docs/emulator-suite) to run Firestore and Auth locally without touching your production database. Point the app at the emulators by calling `connectFirestoreEmulator(db, 'localhost', 8080)` and `connectAuthEmulator(auth, 'http://localhost:9099')` after initialisation.
+</Tip>

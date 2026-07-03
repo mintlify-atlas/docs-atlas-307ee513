@@ -1,0 +1,116 @@
+---
+title: "Webtile: Browser-Based Tilemap and CPC Sprite Editor"
+sidebarTitle: "Introduction"
+description: "Webtile is a browser-based tilemap and CPC sprite editor with Firebase-backed cloud storage. Learn what it does and how its pieces fit together."
+---
+
+Webtile is a browser-based editor for building tile-based game maps and creating Amstrad CPC sprites, designed for retro game developers and CPC enthusiasts who want a cloud-connected creative tool that works entirely inside a browser — no installation required. This page explains what Webtile offers, how its two main editing workflows operate, and how the application is structured so you can navigate it with confidence.
+
+## Who Webtile Is For
+
+Webtile is built for two overlapping audiences:
+
+- **Retro game developers** who need a quick, portable way to design tile-based maps and export them in formats their engines can consume (`.tmx` for Tiled-compatible loaders).
+- **CPC enthusiasts and demosceners** who want to create, preview, and export sprites that respect the Amstrad CPC's video modes, hardware colour palette, and byte-encoding conventions — including Mode 0, Mode 1, and Mode 2 pixel formats.
+
+Because everything persists in Firestore, your work is available from any browser and is never tied to a single machine.
+
+## Two Main Workflows
+
+### Tilemap Editing
+
+The tilemap workflow lets you import a tileset PNG, configure map dimensions (tile size, map size in tiles, optional double-width stretch), and then paint tiles onto a grid using stamp, fill, and eraser tools. Maps are stored in Firestore and can be exported as `.tmx` files for use in external editors like Tiled or consumed directly by game engines.
+
+### CPC Sprite Creation
+
+The sprite workflow provides a pixel editor tuned to the Amstrad CPC hardware. You select a video mode (0, 1, or 2), assign CPC colours to ink slots, and draw frame-by-frame with pencil, eraser, fill, picker, and selection tools. Sprites can be exported as:
+
+- **PNG** — a transparent-background image of the current frame at 1:1 pixel scale.
+- **JASC-PAL `.pal`** — a standard palette file containing the sprite's CPC colour assignments.
+- **CPC ASM / BASIC** — byte arrays encoded to CPC hardware format (interleaved bit planes per mode, with optional mask interleaving and scanline-interleaved row ordering), ready to paste into an assembler or BASIC listing.
+
+## Firebase Auth and Firestore
+
+Webtile uses **Firebase Authentication** to identify users via Google OAuth popup or email/password sign-in. Once authenticated, all project data is stored in **Cloud Firestore** under a path scoped to that user's UID:
+
+```
+users/{uid}/projects/{pid}
+users/{uid}/projects/{pid}/maps/{mid}
+users/{uid}/projects/{pid}/maps/{mid}/assets/tileset
+users/{uid}/projects/{pid}/sprites/{sid}
+```
+
+The tileset image is stored as a base64 data URL in a separate sub-document to stay within Firestore's per-document size limits. Map tile data is serialised to a flat integer array (`-1` for empty cells, `tileRow × 1000 + tileCol` for populated cells) on save and decoded back to the in-memory representation on load. This cloud-first persistence model means you never need to manually save your work — Webtile handles that for you automatically.
+
+## Application Architecture
+
+Webtile is a **single-page React 18 application** built with Vite. It uses `HashRouter` from React Router v6, so every URL begins with `#/`. Hash-based routing was chosen to play well with reverse-proxy environments without requiring server-side rewrite rules.
+
+There are three routes:
+
+| Route | Component | Access |
+|---|---|---|
+| `#/` | `HomePage` | Protected — requires sign-in |
+| `#/login` | `LoginPage` | Public |
+| `#/forgot-password` | `ForgotPasswordPage` | Public |
+
+An `AuthContext` wraps the entire app and tracks Firebase Auth state. While auth initialises, a `LoadingScreen` with blinking dots is displayed. A `ProtectedRoute` component redirects unauthenticated visitors to `#/login` automatically.
+
+There is no external state management library. All editor state lives in `HomePage`, which owns state and passes handlers down to child components.
+
+### Four Editor Views
+
+The main content area of `HomePage` renders one of four views depending on the current state:
+
+| View | When it appears |
+|---|---|
+| `EmptyWorkspace` | No project is loaded yet |
+| `SpriteEditor` | A sprite is selected (`selectedSpriteId` is set) |
+| `NoMaps` | A project is loaded but it has no maps |
+| `TilemapGrid` | A project and map are active — the normal editing mode |
+
+### Top Navigation
+
+The `TopNav` bar exposes three dropdown menus:
+
+- **PROJECTS** — New, Load, Close
+- **MAPS** — list of maps (with delete), New, Import TMX, Export TMX, Export Tileset, Close
+- **SPRITES** — list of sprites (with delete), New, Import PNG, Close
+
+A centre breadcrumb shows the active map name and its pixel dimensions.
+
+## Auto-Save
+
+Webtile saves your work automatically so you never need to reach for a save shortcut.
+
+- **Map tiles** are written to Firestore **2 seconds** after the last tile paint.
+- **Sprite pixels and structure** are written to Firestore **1.5 seconds** after the last mutation.
+
+Auto-save uses React refs internally so the async callback always captures the latest values without stale closure issues.
+
+## Export Formats at a Glance
+
+| Format | Workflow | How to trigger |
+|---|---|---|
+| `.tmx` (Tiled XML) | Tilemap | MAPS → Export TMX |
+| Tileset `.png` | Tilemap | MAPS → Export Tileset |
+| Frame `.png` | Sprite | EXPORT → EXP PNG in the sprite toolbar |
+| JASC-PAL `.pal` | Sprite | Palette export button in the sprite right sidebar |
+| CPC ASM / BASIC | Sprite | EXPORT → EXPORT in the sprite toolbar |
+
+## Where to Go Next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Sign in, create a project, paint your first tilemap, and export a TMX file in under five minutes.
+  </Card>
+  <Card title="Map Editor Overview" icon="map" href="/map-editor/overview">
+    Deep dive into tileset import, painting tools, zoom levels, and TMX round-tripping.
+  </Card>
+  <Card title="Sprite Editor Overview" icon="palette" href="/sprite-editor/overview">
+    Learn CPC video modes, ink slots, frame animation, and hardware byte export.
+  </Card>
+  <Card title="Self-Hosting" icon="server" href="/self-hosting">
+    Deploy Webtile with your own Firebase project on a VPS or any static host.
+  </Card>
+</CardGroup>

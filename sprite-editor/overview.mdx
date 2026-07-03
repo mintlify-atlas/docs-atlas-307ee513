@@ -1,0 +1,127 @@
+---
+title: "Sprite Editor: CPC Pixel Art in the Browser"
+sidebarTitle: "Overview"
+description: "Tour the Webtile sprite editor's layout, canvas rendering, zoom levels, frame strip, and right-sidebar palette and minimap controls."
+---
+
+The Webtile sprite editor is a fully browser-based pixel-art tool purpose-built for Amstrad CPC graphics. It opens automatically whenever you select a sprite from the **SPRITES** menu in the top navigation bar. Every change is persisted to Firestore with a 1.5-second debounce, so you can paint freely without worrying about manual saves.
+
+## Activating the Editor
+
+Open or create a project, then use the **SPRITES** menu to either create a new sprite or click an existing one. As soon as a sprite is selected, the main content area switches from the tilemap view to the sprite editor. Selecting a different sprite from the menu loads it instantly; the undo history is cleared on each load.
+
+## Layout
+
+The editor is divided into three panels that fill the browser window vertically:
+
+| Region | Width | Purpose |
+|--------|-------|---------|
+| Left toolbar | 196 px (fixed) | All drawing tools, zoom, flip, undo, export |
+| Main canvas | Flexible | Pixel-editing canvas with zoom and pan |
+| Right sidebar | 200 px (fixed) | Minimap, ink slots, palette picker, frame strip |
+
+A thin status bar at the bottom shows the cursor position in sprite-pixel coordinates and the active selection bounds whenever a selection is live.
+
+## Canvas Rendering
+
+The canvas is redrawn by `renderSpriteToCanvas` on every state change. The rendering pipeline has three layers:
+
+<Steps>
+  <Step title="Checkerboard background">
+    One square is drawn per sprite pixel in two alternating dark shades (`#111820` and `#0c1219`). This makes transparent pixels (ink 0) clearly visible without obscuring painted pixels.
+  </Step>
+  <Step title="Pixel layer">
+    Each pixel whose ink index is non-zero is filled with the corresponding CPC hardware color looked up from the sprite's `palette` array. Ink 0 is always skipped — it is the transparency ink.
+  </Step>
+  <Step title="Amber grid overlay">
+    When the grid is enabled (always on in the editor), horizontal and vertical lines are drawn at the interval set by `gridCellW` × `gridCellH` (default 8 × 8 sprite pixels) using a semi-transparent amber stroke (`rgba(255,170,0,0.55)`).
+  </Step>
+</Steps>
+
+## Zoom Levels
+
+Four discrete zoom levels are available, controlled by the **ZOOM IN** / **ZOOM OUT** toolbar buttons or the scroll wheel:
+
+```
+SPRITE_ZOOM_LEVELS = [1, 2, 4, 8]
+```
+
+The actual screen size of each pixel depends on both the zoom level and the current video mode. For Mode 0, the base cell width is 16 screen pixels; for Mode 1 it is 8; for Mode 2 it is 4. The cell height is always 8 screen pixels per zoom step.
+
+## Double-Width Mode
+
+Toggling **Double Width** (`D` key or the PROPS/SETTINGS modal) stretches every pixel 2× horizontally. This simulates the 2:1 pixel aspect ratio of CPC Mode 0 on a standard TV — useful for checking how sprites will actually look on real hardware before exporting. The zoom formula when double-width is active:
+
+```
+cellW = CELL_W_BASE[videoMode] × zoom × 2
+cellH = CELL_H_BASE × zoom
+```
+
+## Custom Paint Cursor
+
+When the Pencil or Eraser tool is active, Webtile replaces the browser cursor with a canvas-generated cursor that is exactly the size of one sprite pixel on screen (`cellW × cellH`, capped at 128 px). The cursor is filled with the active ink color for the pencil tool and a checkerboard pattern for the eraser (or when ink 0 is selected), with a thin white border. This gives precise visual feedback about the pixel size you are about to paint.
+
+## Left Toolbar
+
+The toolbar uses a two-column grid layout. Buttons are grouped by function and separated by thin dividers:
+
+| Group | Buttons |
+|-------|---------|
+| Drawing tools | PENCIL, ERASE, PICK, SELECT, FILL, MOVE |
+| Clipboard | COPY, CUT, PASTE |
+| Transform | FLIP H, FLIP V, UNDO |
+| View | ZOOM IN, ZOOM OUT |
+| Modals | SETTINGS, PROPS |
+| File | EXPORT, EXP PNG, IMP PNG |
+
+Foreground and background ink swatches sit below the toolbar buttons, with a swap button (⇄) between them.
+
+## Right Sidebar
+
+The right sidebar stacks vertically and scrolls independently from the canvas:
+
+- **Sprite minimap** — a small canvas preview scaled to fit within 172 px, with no grid overlay. Updated live as you paint.
+- **Sprite info** — displays the sprite name, video mode, pixel dimensions, frame count, and current zoom level.
+- **Ink slots** — one swatch per ink available in the current video mode (2, 4, or 16 slots). Left-click sets the foreground ink; right-click sets the background ink.
+- **Palette import / export** — two buttons (IMPORT PAL / EXPORT PAL) for reading and writing JASC-PAL `.pal` files.
+- **CPC 27-color picker** — a 9-column grid of every CPC hardware color. Clicking a swatch assigns it to the currently selected ink slot.
+- **Frame strip** (in the bottom section) — thumbnails of every frame, an **+** button to clone the current frame, and a ✕ delete button on hover.
+- **Animation playback** — a looping canvas preview that cycles through all frames at the configured FPS.
+
+## Modals
+
+Three modals are accessible from the left toolbar:
+
+<CardGroup cols={3}>
+  <Card title="Properties (PROPS)" icon="sliders">
+    Rename the sprite, resize the canvas with nine-point anchor and background ink selection, and toggle double-width display.
+  </Card>
+  <Card title="Settings" icon="gear">
+    Toggle double-width pixels and configure the amber grid overlay cell size (width × height in sprite pixels).
+  </Card>
+  <Card title="Export (EXPORT)" icon="download">
+    Generate CPC hardware bytes as Z80 ASM `DEFB` or Locomotive BASIC `DATA` statements. Supports hex and decimal output, optional mask interleaving, and CPC scanline-interleaved row ordering.
+  </Card>
+</CardGroup>
+
+## Auto-Save
+
+Every pixel mutation goes through the central `updateSprite(fn)` helper. After each call, a 1.5-second debounce timer is (re)started. When the timer fires, the current sprite state is written to Firestore via `saveSprite`. A save-status indicator in the application header shows `saving` → `saved` or `error`.
+
+<Note>
+  Navigating away before the 1.5-second debounce expires will discard unpersisted changes. Webtile does not prompt you before switching sprites.
+</Note>
+
+---
+
+<CardGroup cols={3}>
+  <Card title="Tools & Shortcuts" icon="pencil" href="/sprite-editor/tools-and-shortcuts">
+    Detailed reference for every drawing tool, selection operations, copy/paste, and all keyboard shortcuts.
+  </Card>
+  <Card title="CPC Video Modes" icon="display" href="/sprite-editor/cpc-video-modes">
+    How Mode 0, 1, and 2 affect color depth, pixel packing, and byte-format export.
+  </Card>
+  <Card title="Import & Export" icon="arrows-rotate" href="/sprite-editor/import-export">
+    Export sprites as PNG, JASC-PAL palette files, or CPC assembly bytes. Import PNG images and palettes.
+  </Card>
+</CardGroup>

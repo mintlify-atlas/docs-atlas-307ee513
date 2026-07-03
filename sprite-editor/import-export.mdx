@@ -1,0 +1,227 @@
+---
+title: "Sprite Import and Export: PNG, Palette, and CPC Bytes"
+sidebarTitle: "Import & Export"
+description: "Export Webtile sprites as PNG, JASC-PAL palette files, or CPC assembly byte data. Import PNG images and palette files to bootstrap sprite creation."
+---
+
+Webtile supports multiple import and export paths for sprites, covering everything from raw pixel art files to CPC hardware-ready byte sequences. You can export a finished sprite as a PNG for sharing, generate Z80 assembly or Locomotive BASIC data blocks for use in real CPC code, swap palettes between projects using the standard JASC-PAL format, and bootstrap a new sprite from any existing PNG image.
+
+---
+
+## PNG Export (`EXP PNG`)
+
+The **EXP PNG** button in the left toolbar exports the **current frame** of the active sprite as a standard PNG file.
+
+How it works:
+
+- A hidden `<canvas>` is created at the sprite's exact pixel dimensions (1:1, no zoom applied).
+- The canvas is cleared to a **fully transparent background** — ink 0 pixels are left empty, making them transparent in the output file.
+- Each non-zero ink pixel is filled with its corresponding CPC hardware color from the palette.
+- The canvas is serialized with `canvas.toDataURL('image/png')` and triggered as a browser download.
+
+**Filename:** `<spriteName>.png`
+
+<Note>
+  Only the currently active frame is exported. To export all frames, use the CPC ASM/BASIC export which includes every frame.
+</Note>
+
+---
+
+## PNG Import into Existing Sprite (`IMP PNG`)
+
+The **IMP PNG** button in the left toolbar imports a PNG file **into the current frame** of the active sprite. The imported image is mapped onto the existing canvas dimensions and quantized to the existing palette.
+
+<Steps>
+  <Step title="Select a PNG file">
+    Click **IMP PNG** to open a file picker. Any PNG (or other image) file can be selected.
+  </Step>
+  <Step title="Scale to canvas size">
+    The image is drawn onto an offscreen `<canvas>` at the sprite's exact `width × height` in pixels using `ctx.drawImage`. No aspect-ratio preservation is applied — the image is stretched to fit.
+  </Step>
+  <Step title="Quantize to palette">
+    Each pixel in the scaled image is compared against every non-zero ink in the current sprite's `palette` array. The ink whose CPC hardware color is closest by Euclidean RGB distance is assigned:
+
+    ```js
+    // distance = (r - cr)² + (g - cg)² + (b - cb)²
+    ```
+  </Step>
+  <Step title="Handle transparency">
+    Pixels with alpha < 128 are assigned ink 0 (transparent) regardless of their RGB values.
+  </Step>
+  <Step title="Push history and apply">
+    A history entry is pushed before the mutation so the import can be undone with **Ctrl+Z**.
+  </Step>
+</Steps>
+
+<Note>
+  Because the import maps colors to the nearest CPC hardware color in the current palette, the result is a best-effort approximation. Colors in the source image that have no close match in the palette will be rounded to the nearest available ink. See the [CPC Video Modes](/sprite-editor/cpc-video-modes) page for palette details.
+</Note>
+
+---
+
+## JASC-PAL Palette Export
+
+Click **EXPORT PAL** in the right sidebar to download the active sprite's palette as a JASC-PAL file.
+
+**Filename:** `<spriteName>.pal`
+
+The exported file contains one RGB entry per ink slot (2, 4, or 16 entries depending on the video mode). The format follows the JASC-PAL standard used by Paint Shop Pro and many other pixel-art tools:
+
+```text
+JASC-PAL
+0100
+16
+0 0 0
+255 255 255
+0 0 255
+128 0 0
+...
+```
+
+| Line | Content |
+|------|---------|
+| 1 | `JASC-PAL` — magic header |
+| 2 | `0100` — version string |
+| 3 | Number of color entries |
+| 4… | One `R G B` entry per line (0–255 each) |
+
+Each entry is the RGB value of the CPC hardware color assigned to that ink slot — for example, if ink 1 is assigned CPC color index 26 (`#FFFFFF`), the exported entry is `255 255 255`.
+
+---
+
+## JASC-PAL Palette Import
+
+Click **IMPORT PAL** in the right sidebar to load a JASC-PAL file and replace the current sprite's palette.
+
+How it works:
+
+<Steps>
+  <Step title="Parse the file">
+    The file is read as text. Lines are trimmed and blank lines removed. The parser skips the `JASC-PAL` and `0100` header lines, reads the entry count, then reads up to that many `R G B` lines.
+  </Step>
+  <Step title="Map to nearest CPC color">
+    Each RGB entry from the file is compared against all 27 CPC hardware colors by Euclidean RGB distance. The closest CPC color index is selected for that ink slot:
+
+    ```js
+    // Finds the CPC color with minimum (r-cr)² + (g-cg)² + (b-cb)²
+    nearestCpcColor(r, g, b)
+    ```
+  </Step>
+  <Step title="Update palette">
+    The sprite's `palette` array is updated for up to `min(entries_in_file, inkCount)` slots. Ink slots beyond the file's entry count are left unchanged. A history entry is pushed so the import is undoable.
+  </Step>
+</Steps>
+
+<Note>
+  The CPC hardware has only 27 distinct colors. If your `.pal` file was created from a non-CPC source (e.g. an RGB photo), every color will be approximated to the nearest CPC hardware color. The mapping is permanent — the original RGB values are not stored.
+</Note>
+
+---
+
+## CPC ASM / BASIC Export (`EXPORT` Button)
+
+The **EXPORT** button opens the Export modal, which encodes all frames of the sprite to CPC hardware byte format. This is the primary output path for using Webtile sprites in actual Amstrad CPC software.
+
+### Export Options
+
+| Option | Description |
+|--------|-------------|
+| **HEX** | Output bytes as `#XX` hexadecimal literals in Z80 assembler `.db` lines |
+| **DEC** | Output bytes as decimal values in Z80 assembler `.db` lines |
+| **BASIC DATA** | Output decimal values in Locomotive BASIC `DATA` lines |
+| **INTERLEAVED** | Re-order rows to match CPC non-linear screen memory layout |
+| **WITH MASK** | Insert a mask byte before each sprite byte per column byte |
+
+### ASM Output Structure
+
+```asm
+; hero | Mode 0 | 16×16 CPC pixels | 3 frame(s)
+; Palette: ink0=0 ink1=26 ink2=6 ink3=18 ink4=3 ...
+;
+; ── Frame 0 ─────────────────────────────────────
+_hero_f0::
+  .db #00,#00,#00,#00,#00,#00,#00,#00  ; row 0
+  .db #A5,#50,#A5,#50,#A5,#50,#A5,#50  ; row 1
+  ...
+
+; ── Frame 1 ─────────────────────────────────────
+_hero_f1::
+  ...
+
+_hero_width  EQU 8
+_hero_height EQU 16
+```
+
+A `_<name>_width` constant gives the number of **bytes** per row (not the pixel width). A `_<name>_height` constant gives the pixel height.
+
+### BASIC DATA Output Structure
+
+```basic
+10 REM HERO | MODE 0 | 16×16 px | 3 frame(s)
+20 REM Palette: ink0=0 ink1=26 ink2=6 ...
+30 REM FRAME 0
+40 DATA 0,0,0,0,0,0,0,0
+50 DATA 165,80,165,80,165,80,165,80
+...
+```
+
+### Mask Interleaving
+
+When **WITH MASK** is enabled, each sprite byte is preceded by a mask byte. In the mask, bit positions for transparent pixels (ink 0) are `1`; opaque pixels are `0`. The output per row becomes:
+
+```
+mask_byte_0, sprite_byte_0, mask_byte_1, sprite_byte_1, ...
+```
+
+This layout is directly usable with the standard AND-OR CPC sprite blitter:
+
+```asm
+  ld a, (hl)      ; screen byte
+  and (mask_ptr)  ; punch hole using mask
+  or  (data_ptr)  ; paint sprite pixels
+  ld  (hl), a     ; write back
+```
+
+---
+
+## ImportSpriteModal — Creating a New Sprite from PNG
+
+The **SPRITES → Import PNG** menu item opens a full import dialog that creates a **brand-new sprite** document from a PNG file, rather than overwriting the current frame of an existing sprite.
+
+<Steps>
+  <Step title="Choose the file">
+    Select a PNG from the top navigation SPRITES menu → Import PNG. The `ImportSpriteModal` opens with the filename pre-filled as the sprite name.
+  </Step>
+  <Step title="Set the video mode">
+    Choose Mode 0, 1, or 2. The modal shows a description of each mode's color count and pixel dimensions to help you decide. The choice affects how many ink slots the auto-generated palette will contain.
+  </Step>
+  <Step title="Preview quantization">
+    The image is immediately scaled to the snapped canvas size and quantized to the selected mode's ink count. The modal shows a live preview of the result. If the image width is not a valid multiple for the selected mode, it is automatically snapped:
+    - Mode 0: nearest multiple of 2
+    - Mode 1: nearest multiple of 4
+    - Mode 2: nearest multiple of 8
+  </Step>
+  <Step title="Auto-generate palette">
+    The quantizer (`quantizeImage`) collects the unique CPC hardware colors present in the image, sorts them by pixel frequency, and assigns the most common colors to ink slots 1 through N. Ink 0 is always reserved for transparency. The palette is automatically populated — no manual color assignment needed.
+  </Step>
+  <Step title="Confirm and save">
+    Click **Import** to call `createSpriteFromImport`, which writes a new sprite document to Firestore with the quantized pixel data, auto-generated palette, and chosen video mode. The new sprite immediately appears in the SPRITES menu.
+  </Step>
+</Steps>
+
+<Note>
+  The `ImportSpriteModal` builds an entirely new sprite document. The current project's existing sprites are not modified. Transparent pixels in the source PNG (alpha < 128) always become ink 0 in the new sprite.
+</Note>
+
+---
+
+## Summary of All Import / Export Paths
+
+| Action | Entry point | Scope | Format |
+|--------|-------------|-------|--------|
+| Export frame as PNG | Left toolbar → EXP PNG | Current frame | `.png` |
+| Import PNG into frame | Left toolbar → IMP PNG | Current frame | `.png` |
+| Export palette | Right sidebar → EXPORT PAL | Active sprite palette | `.pal` (JASC-PAL) |
+| Import palette | Right sidebar → IMPORT PAL | Active sprite palette | `.pal` (JASC-PAL) |
+| Export CPC bytes | Left toolbar → EXPORT | All frames | ASM `.db` / BASIC `DATA` |
+| Create sprite from PNG | SPRITES menu → Import PNG | New sprite document | `.png` → Firestore |
