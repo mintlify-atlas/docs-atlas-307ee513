@@ -1,7 +1,7 @@
 ---
-title: "Sprite Editor: CPC Pixel Art in the Browser"
+title: "Sprite Editor Overview: CPC Pixel Art in the Browser"
 sidebarTitle: "Overview"
-description: "Tour the Webtile sprite editor's layout, canvas rendering, zoom levels, frame strip, and right-sidebar palette and minimap controls."
+description: "Tour the Webtile sprite editor: canvas layout, zoom levels, drawing tools, ink slots, palette controls, and the CPC 27-color picker in the right sidebar."
 ---
 
 The Webtile sprite editor is a fully browser-based pixel-art tool purpose-built for Amstrad CPC graphics. It opens automatically whenever you select a sprite from the **SPRITES** menu in the top navigation bar. Every change is persisted to Firestore with a 1.5-second debounce, so you can paint freely without worrying about manual saves.
@@ -18,7 +18,7 @@ The editor is divided into three panels that fill the browser window vertically:
 |--------|-------|---------|
 | Left toolbar | 196 px (fixed) | All drawing tools, zoom, flip, undo, export |
 | Main canvas | Flexible | Pixel-editing canvas with zoom and pan |
-| Right sidebar | 200 px (fixed) | Minimap, ink slots, palette picker, frame strip |
+| Right sidebar | 200 px (fixed) | Minimap, ink slots, palette picker, CPC color grid |
 
 A thin status bar at the bottom shows the cursor position in sprite-pixel coordinates and the active selection bounds whenever a selection is live.
 
@@ -85,8 +85,6 @@ The right sidebar stacks vertically and scrolls independently from the canvas:
 - **Ink slots** — one swatch per ink available in the current video mode (2, 4, or 16 slots). Left-click sets the foreground ink; right-click sets the background ink.
 - **Palette import / export** — two buttons (IMPORT PAL / EXPORT PAL) for reading and writing JASC-PAL `.pal` files.
 - **CPC 27-color picker** — a 9-column grid of every CPC hardware color. Clicking a swatch assigns it to the currently selected ink slot.
-- **Frame strip** (in the bottom section) — thumbnails of every frame, an **+** button to clone the current frame, and a ✕ delete button on hover.
-- **Animation playback** — a looping canvas preview that cycles through all frames at the configured FPS.
 
 ## Modals
 
@@ -100,7 +98,7 @@ Three modals are accessible from the left toolbar:
     Toggle double-width pixels and configure the amber grid overlay cell size (width × height in sprite pixels).
   </Card>
   <Card title="Export (EXPORT)" icon="download">
-    Generate CPC hardware bytes as Z80 ASM `DEFB` or Locomotive BASIC `DATA` statements. Supports hex and decimal output, optional mask interleaving, and CPC scanline-interleaved row ordering.
+    Generate CPC hardware bytes as Z80 ASM `.db` directives or Locomotive BASIC `DATA` statements. Supports hex and decimal output, optional mask interleaving, and CPC scanline-interleaved row ordering.
   </Card>
 </CardGroup>
 

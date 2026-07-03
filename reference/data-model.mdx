@@ -1,7 +1,7 @@
 ---
-title: "Webtile Firestore Data Model Reference"
+title: "Firestore Data Model: Collections, Fields, and Tile Encoding"
 sidebarTitle: "Data Model"
-description: "Complete reference for Webtile's Firestore collection hierarchy, document schemas, tile encoding, and sprite pixel encoding."
+description: "Complete Firestore schema for Webtile: projects, maps, tileset sub-docs, and sprites, plus tile integer encoding and pixel format."
 ---
 
 Webtile stores all user data in Cloud Firestore using a hierarchical collection structure scoped to each authenticated user. Every project, map, tileset image, and sprite lives under the `users/{uid}` namespace, ensuring that Firestore security rules can trivially restrict access to the document owner. This page documents every collection, document schema, and encoding convention used by the application.
